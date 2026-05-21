@@ -81,22 +81,53 @@ def find_all_by_resource_id(xml: str, resource_id: str) -> list[dict[str, Any]]:
 def dump(
     device: Device,
     output_path: str | None = None,
-    retry: int = 2,
+    retry: int = 4,
 ) -> dict[str, Any]:
-    """Run `uiautomator dump`, pull XML to local path. Retries on idle failure."""
+    """Run `uiautomator dump`, pull XML to local path.
+
+    `uiautomator dump` fails with "could not get idle state" when the screen
+    is animating continuously (e.g. Douyin home autoplays video). The dump
+    process exits 0 but no file is written to /sdcard/em.xml, so the only
+    reliable success signal is "pull succeeded AND file > 100 bytes".
+
+    Recovery escalates: bare → tap-pause low → tap-pause higher → dpad-center →
+    tiny nudge swipe. Between attempts we also delete any stale dump file.
+    """
     if output_path is None:
         output_path = f"/tmp/em-dump-{int(time.time() * 1000)}.xml"
-    last_err: Exception | None = None
-    for attempt in range(retry + 1):
+
+    def _try_dump() -> int | None:
         try:
+            device.shell("rm -f /sdcard/em.xml")
             device.shell("uiautomator dump --compressed /sdcard/em.xml")
             device.pull("/sdcard/em.xml", output_path)
             size = Path(output_path).stat().st_size
-            if size > 100:
-                return {"path": output_path, "size": size}
-        except EmError as e:
-            last_err = e
-        if attempt < retry:
-            device.shell("input tap 540 1200")
-            time.sleep(0.6)
-    raise last_err or EmError(ErrorCode.UNKNOWN, "uiautomator dump failed")
+            return size if size > 100 else None
+        except (EmError, FileNotFoundError, OSError):
+            return None
+
+    recovery_steps: list[tuple[str, float]] = [
+        ("", 0.0),
+        ("input tap 540 1100", 0.9),
+        ("input tap 540 800", 1.0),
+        ("input keyevent KEYCODE_DPAD_CENTER", 1.2),
+        ("input swipe 540 1500 540 1490 100", 1.4),
+    ]
+    for attempt in range(min(retry + 1, len(recovery_steps))):
+        cmd, sleep_s = recovery_steps[attempt]
+        if cmd:
+            try:
+                device.shell(cmd)
+            except EmError:
+                pass
+            time.sleep(sleep_s)
+        size = _try_dump()
+        if size is not None:
+            return {"path": output_path, "size": size}
+    raise EmError(
+        ErrorCode.UNKNOWN,
+        "uiautomator dump failed after all recovery attempts",
+        hint=(
+            "screen may be animating continuously; try `mobilecli screenshot` to see current state"
+        ),
+    )
