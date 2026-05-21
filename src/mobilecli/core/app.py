@@ -40,6 +40,19 @@ def launch(device: Device, package: str) -> dict[str, Any]:
     return {"package": package}
 
 
+def force_stop(device: Device, package: str) -> dict[str, Any]:
+    """Kill all processes belonging to `package` so the next launch starts fresh.
+
+    Stronger than `back` + relaunch -- this clears the task stack, so the app
+    cannot be brought back into a half-state (e.g. DetailActivity on top from
+    a previous session). Used as a fallback in plugins when the back-press
+    recovery loop fails to reach the home screen.
+    """
+    _validate_package(package)
+    device.shell(f"am force-stop {package}")
+    return {"package": package, "killed": True}
+
+
 _FOCUS_RE = re.compile(r"mCurrentFocus=Window\{[^}]*\s([^/\s]+)/([^\s}]+)")
 
 

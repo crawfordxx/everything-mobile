@@ -33,22 +33,53 @@ app = App(
 )
 
 
-# ----- launch ------------------------------------------------------------------
+# Home-state oracle (UI-tree research: home is IndexActivityV2).
+_HOME_ACTIVITY_SUFFIX = ".IndexActivityV2"
 
 
-@app.verb("launch")
-def launch(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
-    """Launch. First launch may route to login wall; recover via back+relaunch."""
-    ctx.app.launch()
-    time.sleep(3)
+def _on_home(ctx: ExecContext) -> bool:
+    activity = str(ctx.app.foreground().get("activity", ""))
+    return activity.endswith(_HOME_ACTIVITY_SUFFIX)
+
+
+def _ensure_home(ctx: ExecContext, max_back: int = 5) -> dict[str, Any]:
+    """Force Xiaohongshu to home (IndexActivityV2).
+
+    Escalating strategy: foreground → back-N → force-stop + relaunch. Also
+    recovers from the first-launch login wall.
+    """
+    ctx.app.ensure_foreground()
+    time.sleep(0.5)
     fg = ctx.app.foreground()
     if "DeviceOfflineRemindActivity" in fg.get("activity", ""):
         ctx.input.keyevent("back")
         time.sleep(1)
         ctx.app.launch()
         time.sleep(3)
-        fg = ctx.app.foreground()
-    return {"foreground": fg, "package": PACKAGE}
+    for _ in range(max_back):
+        if _on_home(ctx):
+            return ctx.app.foreground()
+        ctx.input.keyevent("back")
+        time.sleep(0.8)
+    if not _on_home(ctx):
+        ctx.app.force_stop()
+        time.sleep(0.8)
+        ctx.app.launch()
+        time.sleep(3.5)
+    return ctx.app.foreground()
+
+
+# ----- launch ------------------------------------------------------------------
+
+
+@app.verb("launch")
+def launch(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """Launch Xiaohongshu and force-navigate to the home feed.
+
+    Recovers from the first-launch login wall if encountered.
+    """
+    fg = _ensure_home(ctx)
+    return {"foreground": fg, "package": PACKAGE, "on_home": _on_home(ctx)}
 
 
 # ----- search ------------------------------------------------------------------
@@ -61,9 +92,12 @@ def _search_args(p: argparse.ArgumentParser) -> None:
 
 @app.verb("search", add_args=_search_args)
 def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
-    """Search notes. Returns a result list; does NOT tap any result."""
-    ctx.app.ensure_foreground()
-    time.sleep(1.5)
+    """Search notes. Returns a result list; does NOT tap any result.
+
+    Forces the app to its home feed first, regardless of where it was left.
+    """
+    _ensure_home(ctx)
+    time.sleep(1.0)
 
     xml = Path(ctx.ui.dump()["path"]).read_text()
     search_node = ctx.ui.find_by_resource_id(
