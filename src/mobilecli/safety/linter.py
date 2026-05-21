@@ -8,7 +8,7 @@ from mobilecli.envelope import EmError, ErrorCode
 
 DEFAULT_BANNED_PATTERNS: list[str] = [
     r"加.{0,4}微信",
-    r"加.{0,4}V[X信]",
+    r"加.{0,4}V.{0,4}[X信]",
     r"VX[\s:：]*\w+",
     r"扫.{0,3}码",
     r"扫.{0,3}二维码",
