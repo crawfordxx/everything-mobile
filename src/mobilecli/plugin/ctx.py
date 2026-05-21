@@ -74,6 +74,10 @@ class AppModule:
     def launch(self) -> dict[str, Any]:
         return core_app.launch(self.device, self.package)
 
+    def force_stop(self) -> dict[str, Any]:
+        """Kill all of the app's processes; next launch starts from a clean task."""
+        return core_app.force_stop(self.device, self.package)
+
     def foreground(self) -> dict[str, Any]:
         return core_app.foreground(self.device)
 

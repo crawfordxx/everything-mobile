@@ -26,15 +26,48 @@ app = App(
 )
 
 
+# Home-state oracle (UI-tree research: home feed lives on SplashActivity).
+_HOME_ACTIVITY_SUFFIX = ".SplashActivity"
+
+
+def _on_home(ctx: ExecContext) -> bool:
+    activity = str(ctx.app.foreground().get("activity", ""))
+    return activity.endswith(_HOME_ACTIVITY_SUFFIX)
+
+
+def _ensure_home(ctx: ExecContext, max_back: int = 5) -> dict[str, Any]:
+    """Force Douyin to its home feed.
+
+    Strategy in escalating strength:
+    1. Ensure foreground (monkey-launch if not).
+    2. Press back up to max_back times — usually unwinds detail / search stacks.
+    3. If still not on SplashActivity: `am force-stop` to kill the task entirely,
+       then re-launch. This recovers from stale tasks where monkey-launch
+       just brings the previous DetailActivity back to top.
+    """
+    ctx.app.ensure_foreground()
+    time.sleep(0.5)
+    for _ in range(max_back):
+        if _on_home(ctx):
+            return ctx.app.foreground()
+        ctx.input.keyevent("back")
+        time.sleep(0.8)
+    if not _on_home(ctx):
+        ctx.app.force_stop()
+        time.sleep(0.8)
+        ctx.app.launch()
+        time.sleep(3.5)
+    return ctx.app.foreground()
+
+
 # ----- launch ------------------------------------------------------------------
 
 
 @app.verb("launch")
 def launch(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
-    """Launch Douyin and return the resulting foreground package + activity."""
-    ctx.app.launch()
-    time.sleep(3)
-    return {"foreground": ctx.app.foreground(), "package": PACKAGE}
+    """Launch Douyin and force-navigate to the home feed."""
+    fg = _ensure_home(ctx)
+    return {"foreground": fg, "package": PACKAGE, "on_home": _on_home(ctx)}
 
 
 # ----- search ------------------------------------------------------------------
@@ -47,9 +80,12 @@ def _search_args(p: argparse.ArgumentParser) -> None:
 
 @app.verb("search", add_args=_search_args)
 def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
-    """Search videos. Returns a result list; does NOT tap any result."""
-    ctx.app.ensure_foreground()
-    time.sleep(1.5)
+    """Search videos. Returns a result list; does NOT tap any result.
+
+    Forces the app to its home feed first, regardless of where it was left.
+    """
+    _ensure_home(ctx)
+    time.sleep(1.0)
 
     # 1. Tap search icon (content-desc="搜索")
     xml = Path(ctx.ui.dump()["path"]).read_text()
