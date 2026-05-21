@@ -76,13 +76,78 @@ def _emit_error(command: str, code: ErrorCode, message: str, hint: str, pretty: 
 
 
 def _load_commands(sub: Any) -> dict[str, Any]:
-    """Import every command module and let it attach to the subparsers."""
+    """Import every command module + every app plugin and attach to subparsers."""
+    from mobilecli.plugin import load as load_apps
+
     loaded: dict[str, Any] = {}
     for name, modpath in COMMAND_MODULES.items():
         mod = importlib.import_module(modpath)
         mod.add_parser(sub)
         loaded[name] = mod
+
+    # Layer 3: app plugins -- each is a top-level subcommand with nested verbs
+    for app_name, app_obj in load_apps().items():
+        app_parser = sub.add_parser(
+            app_name,
+            help=f"{app_obj.package} ({len(app_obj.verbs)} verbs)",
+        )
+        verb_sub = app_parser.add_subparsers(dest="verb", metavar="VERB")
+        for verb_name, verb in app_obj.verbs.items():
+            vp = verb_sub.add_parser(verb_name)
+            if verb.add_args is not None:
+                verb.add_args(vp)
+            if verb.requires_commit_flag:
+                vp.add_argument(
+                    "--commit",
+                    action="store_true",
+                    help="Actually perform the action (requires EM_ALLOW_COMMIT=1)",
+                )
+        loaded[app_name] = ("__app__", app_obj)
     return loaded
+
+
+def _run_app_verb(app_obj: Any, args: argparse.Namespace) -> str:
+    """Dispatch one app verb wrapped in @envelope so EmError -> JSON."""
+    import os
+    from typing import cast
+
+    from mobilecli.adb.device import Device
+    from mobilecli.envelope import EmError, ErrorCode, envelope
+    from mobilecli.plugin.ctx import ExecContext
+
+    @envelope(command=f"{app_obj.name}.{args.verb}")
+    def _inner(*, device: str) -> dict[str, Any]:
+        if args.verb is None:
+            raise EmError(
+                ErrorCode.UNKNOWN,
+                f"no verb specified for {app_obj.name}",
+                hint=f"available: {', '.join(app_obj.verbs.keys())}",
+            )
+        verb = app_obj.get_verb(args.verb)
+        if verb is None:
+            raise EmError(
+                ErrorCode.UNKNOWN,
+                f"unknown verb: {app_obj.name} {args.verb}",
+                hint=f"available: {', '.join(app_obj.verbs.keys())}",
+            )
+        if getattr(args, "commit", False) and os.environ.get("EM_ALLOW_COMMIT") != "1":
+            raise EmError(
+                ErrorCode.COMMIT_REFUSED,
+                "--commit requires EM_ALLOW_COMMIT=1",
+                hint="export EM_ALLOW_COMMIT=1 (only for actions you actually intend)",
+            )
+        dev = Device.from_serial(device or None)
+        ctx = ExecContext.build(
+            device=dev,
+            package=app_obj.package,
+            account=args.account,
+            caps=app_obj.daily_caps,
+            extra_lint=app_obj.extra_lint_patterns,
+        )
+        return cast(dict[str, Any], verb(args, ctx))
+
+    result: str = _inner(device=args.serial or "")
+    return result
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -117,6 +182,10 @@ def main(argv: list[str] | None = None) -> int:
             pretty=args.pretty,
         )
         return 1
-    out = loaded[args.command].run(args)
+    target = loaded[args.command]
+    if isinstance(target, tuple) and target[0] == "__app__":
+        out = _run_app_verb(target[1], args)
+    else:
+        out = target.run(args)
     _emit(out, args.pretty)
     return 0
