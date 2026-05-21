@@ -17,10 +17,9 @@ def add_parser(subparsers: Any) -> None:
 
 @envelope(command="install")
 def _run(*, device: str, apk: str) -> dict[str, Any]:
-    dev = Device(serial=device)
+    dev = Device.from_serial(device or None)
     return core_app.install(dev, apk)
 
 
 def run(args: argparse.Namespace) -> str:
-    dev = Device.from_serial(args.serial)
-    return _run(device=dev.serial, apk=args.apk)
+    return _run(device=args.serial or "", apk=args.apk)

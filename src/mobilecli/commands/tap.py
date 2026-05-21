@@ -18,10 +18,9 @@ def add_parser(subparsers: Any) -> None:
 
 @envelope(command="tap")
 def _run(*, device: str, x: int, y: int) -> dict[str, Any]:
-    dev = Device(serial=device)
+    dev = Device.from_serial(device or None)
     return core_input.tap_raw(dev, x, y)
 
 
 def run(args: argparse.Namespace) -> str:
-    dev = Device.from_serial(args.serial)
-    return _run(device=dev.serial, x=args.x, y=args.y)
+    return _run(device=args.serial or "", x=args.x, y=args.y)

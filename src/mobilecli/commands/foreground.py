@@ -16,10 +16,9 @@ def add_parser(subparsers: Any) -> None:
 
 @envelope(command="foreground")
 def _run(*, device: str) -> dict[str, Any]:
-    dev = Device(serial=device)
+    dev = Device.from_serial(device or None)
     return core_app.foreground(dev)
 
 
 def run(args: argparse.Namespace) -> str:
-    dev = Device.from_serial(args.serial)
-    return _run(device=dev.serial)
+    return _run(device=args.serial or "")

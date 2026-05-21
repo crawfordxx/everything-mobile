@@ -38,11 +38,22 @@ def add_parser(subparsers: Any) -> None:
 
 @envelope(command="keyevent")
 def _run(*, device: str, key: str) -> dict[str, Any]:
-    dev = Device(serial=device)
-    code: int | str = KEY_ALIASES.get(key.lower(), key)
+    from mobilecli.envelope import EmError, ErrorCode
+
+    dev = Device.from_serial(device or None)
+    code: int | str
+    if key.lower() in KEY_ALIASES:
+        code = KEY_ALIASES[key.lower()]
+    elif key.isdigit():
+        code = int(key)
+    else:
+        raise EmError(
+            ErrorCode.UNKNOWN,
+            f"invalid keyevent: {key!r}",
+            hint="use an alias (back/home/...) or numeric KEYCODE",
+        )
     return core_input.keyevent_raw(dev, code)
 
 
 def run(args: argparse.Namespace) -> str:
-    dev = Device.from_serial(args.serial)
-    return _run(device=dev.serial, key=args.key)
+    return _run(device=args.serial or "", key=args.key)
