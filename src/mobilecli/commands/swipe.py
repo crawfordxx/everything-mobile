@@ -20,9 +20,20 @@ def add_parser(subparsers: Any) -> None:
 
 
 @envelope(command="swipe")
-def _run(*, device: str, x1: int, y1: int, x2: int, y2: int, duration: int) -> dict[str, Any]:
+def _run(
+    *,
+    device: str,
+    x1: int,
+    y1: int,
+    x2: int,
+    y2: int,
+    duration: int,
+    raw: bool,
+) -> dict[str, Any]:
     dev = Device.from_serial(device or None)
-    return core_input.swipe_raw(dev, x1, y1, x2, y2, duration)
+    if raw:
+        return core_input.swipe_raw(dev, x1, y1, x2, y2, duration)
+    return core_input.swipe_humanized(dev, (x1, y1), (x2, y2))
 
 
 def run(args: argparse.Namespace) -> str:
@@ -33,4 +44,5 @@ def run(args: argparse.Namespace) -> str:
         x2=args.x2,
         y2=args.y2,
         duration=args.duration,
+        raw=args.raw,
     )

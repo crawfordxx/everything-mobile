@@ -42,6 +42,16 @@ def _build_parser() -> tuple[argparse.ArgumentParser, Any]:
     parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON output")
     parser.add_argument("--verbose", action="store_true", help="Stderr debug logs")
     parser.add_argument("--timeout", type=int, default=30, help="Per-command timeout (s)")
+    parser.add_argument(
+        "--raw",
+        action="store_true",
+        help="Disable humanization (debugging only; requires EM_ALLOW_RAW=1)",
+    )
+    parser.add_argument(
+        "--account",
+        default="default",
+        help="SessionGovernor account identifier",
+    )
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")
     return parser, sub
 
@@ -76,6 +86,8 @@ def _load_commands(sub: Any) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    import os
+
     parser, sub = _build_parser()
     loaded = _load_commands(sub)
     if argv is None:
@@ -87,6 +99,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command is None:
         parser.print_help()
         return 2
+    if args.raw and os.environ.get("EM_ALLOW_RAW") != "1":
+        _emit_error(
+            command=args.command or "",
+            code=ErrorCode.COMMIT_REFUSED,
+            message="--raw requires EM_ALLOW_RAW=1",
+            hint="export EM_ALLOW_RAW=1 (debugging only)",
+            pretty=args.pretty,
+        )
+        return 1
     if args.command not in loaded:
         _emit_error(
             command=args.command or "",

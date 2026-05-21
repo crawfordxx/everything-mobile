@@ -64,6 +64,23 @@ def _run(*, device: str) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001
         checks.append(_check("adbkeyboard_installed", "warn", str(e)))
 
+    # Layer 2.5 humanization + fingerprint signals
+    from mobilecli.safety import device_check
+    from mobilecli.safety.governor import DEFAULT_STATE_DIR
+
+    checks.extend(device_check.signals(dev))
+
+    if DEFAULT_STATE_DIR.exists():
+        checks.append(_check("session_state_dir", "pass", str(DEFAULT_STATE_DIR)))
+    else:
+        checks.append(
+            _check(
+                "session_state_dir",
+                "warn",
+                f"will be created on first verb: {DEFAULT_STATE_DIR}",
+            ),
+        )
+
     return _summary(checks)
 
 
