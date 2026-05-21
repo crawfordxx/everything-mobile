@@ -5,7 +5,7 @@
 1. **Built-in** — Python modules under `mobilecli.apps.*` (e.g. `mobilecli.apps.douyin`)
 2. **External** — packages that register an `App` object under the `mobilecli.apps` entry-points group
 
-The framework calls each plugin's verbs with `(args, ctx)` where `ctx` is an `ExecContext`. Layer 2.5 humanization, governor, and linter are pre-wired into `ctx` — you cannot bypass them from plugin code.
+The framework calls each plugin's verbs with `(args, ctx)` where `ctx` is an `ExecContext`. Layer 2.5 humanization, governor, and linter are pre-wired into `ctx.input` / `ctx.governor` / `ctx.linter`. **If you stick to the `ctx.input.*` API, every action is humanized, governor-checked, and linted.** A determined plugin author *can* reach the lower layers via `ctx.device.shell(...)` — this is by design (advanced verbs sometimes need it) but doing so means you opt out of the safety guarantees, and PRs that do it without justification will be rejected.
 
 ## Minimal external plugin
 
