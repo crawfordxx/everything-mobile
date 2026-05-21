@@ -2,8 +2,8 @@
 
 - **Date:** 2026-05-21
 - **Repo:** `/Users/crawford/workspace/everything-mobile`
-- **Reference code (private, do not ship):** `(internal sample, not vendored)`
-- **Test device:** Pixel-class Android, serial `EXAMPLE-SERIAL`, USB ADB
+- **Reference code:** an internal sample (not vendored, not shipped)
+- **Test device:** Pixel-class Android, USB ADB (serial referenced from `EM_SERIAL` / `EM_TEST_SERIAL` env)
 
 ## 1. Goal & scope
 
@@ -320,8 +320,9 @@ everything-mobile/
 │  │  ├─ humanize.py             log-normal delay, tap jitter (60% inner box),
 │  │  │                          bezier swipe (30+ pts, ease-in-out + wobble),
 │  │  │                          read_pause(screen_hash), per-char type delay
-│  │  ├─ governor.py             SessionGovernor: per-account daily/hourly/session caps,
-│  │  │                          warm-up ramp, persistence under ~/.everything-mobile/sessions/
+│  │  ├─ governor.py             SessionGovernor: per-account daily caps with
+│  │  │                          atomic JSON persistence under ~/.everything-mobile/sessions/
+│  │  │                          (hourly / session-length / warm-up ramp deferred to v2)
 │  │  ├─ linter.py               ContentLinter: regex blocks for phone/微信/VX/QR/扫码/戳我,
 │  │  │                          per-platform template-reuse counter
 │  │  └─ device_check.py         Detects ADBKeyboard-as-IME, adb_enabled=1, accessibility-svc.
@@ -445,7 +446,7 @@ Concrete defaults that Layer 2 primitives apply unless `--raw` is set. Sourced f
 
 - **Tap jitter**: sample target within the inner 60% box of the element bounds (not the geometric center). Default `jitter=True` on every `tap`.
 - **Swipe trajectory**: Bezier curve, 30+ intermediate points, ease-in-out velocity, 4–15 px lateral wobble at each segment, 80–200 ms leading dwell, 50–150 ms trailing dwell. `curve='straight'` only available in unit tests, never via CLI.
-- **Scroll**: same Bezier model as swipe; the library never emits a single-segment scroll.
+- **Scroll**: uses the same `swipe_humanized` path. v1 emits a single `input swipe` line because `adb shell input swipe` only supports straight interpolation; endpoints are jittered ±4 px and duration is sampled in [600, 1200] ms so identical inputs don't produce bit-identical commands. True multi-segment Bezier requires minitouch / `sendevent` dispatch and is deferred to v2.
 
 ### Daily caps (seed values, configurable per account)
 
@@ -563,6 +564,6 @@ The README is the project front door. It must contain, in this order:
 ### Other open-source posture decisions
 
 - README front-loads: "no AI inside; designed to be driven by Claude Code, Codex, openclaw, etc."
-- No mention of any private brand ((internal) / (internal) / (internal sample) / internal model / (internal)) anywhere in the public repo.
+- No mention of any private brand, internal product, or proprietary marketing material anywhere in the public repo.
 - The reference code's marketing comment templates are **NOT** included as fixtures, examples, or defaults. They are explicitly the kind of payload `ContentLinter` exists to refuse.
 - v1 ships with no example evil prompts. The example AI-usage doc demos benign verbs only (search results to JSON, read comment counts).

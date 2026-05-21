@@ -8,15 +8,23 @@ import sys
 
 import pytest
 
-EXPECTED_SERIAL = "EXAMPLE-SERIAL"
-
 
 @pytest.fixture(scope="module")
 def device_serial() -> str:
+    """Resolve test device via env (EM_TEST_SERIAL) or fall back to the first
+    online device. Skip the suite cleanly if no device is connected."""
+    import os
+
+    requested = os.environ.get("EM_TEST_SERIAL")
     r = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=False)
-    if EXPECTED_SERIAL not in r.stdout:
-        pytest.skip(f"test device {EXPECTED_SERIAL} not connected")
-    return EXPECTED_SERIAL
+    online = [line.split("\t")[0].strip() for line in r.stdout.splitlines() if "\tdevice" in line]
+    if not online:
+        pytest.skip("no device connected; set EM_TEST_SERIAL or attach a device")
+    if requested:
+        if requested not in online:
+            pytest.skip(f"requested EM_TEST_SERIAL={requested} not online (have {online})")
+        return requested
+    return online[0]
 
 
 def _cli(*args: str) -> dict:

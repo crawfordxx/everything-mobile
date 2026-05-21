@@ -1,27 +1,42 @@
-# Anti-risk-control patterns for AI-driven Android automation
+# Platform constraints reference (for legitimate AI-driven testing)
 
-> **Why this exists.** `everything-mobile` is a CLI/library that lets AI agents
-> drive real Android apps (Douyin / Xiaohongshu / WeChat / etc.) via UI
-> automation. AI agents have a built-in problem: their timing is too clean
-> (no human delays), their taps land on element centers (no jitter), their
-> swipes are straight lines (no jitter, no acceleration curve), and their
-> action sequences are perfectly ordered. Every behavioral-biometrics-based
-> bot detector on the market is tuned exactly to that signature.
+> ## ⚠️ Read this first
 >
-> This doc is the cheatsheet of empirical, dated numbers and concrete
-> mitigations we feed into Layer 2 primitives (`tap`, `swipe`, `type`,
-> `read_pause`) and into per-app plugin defaults. It is *not* a guide to
-> spam — it is a guide to **not getting flagged for being a robot just
-> because we are one**.
+> This document exists for **one** purpose: a single legitimate user, testing
+> their own account on their own phone with an AI driver, should not get
+> rate-limited or shadowbanned as collateral damage from clean machine timing.
+> The numbers below are the **upper bounds we cap ourselves at** so the
+> library defaults stay well inside what a normal phone user does.
 >
-> Scope note: we deliberately do *not* cover account manufacturing, paid
-> residential IP rotation, SIM farms, or any fraud-adjacent mitigation. We
-> cover the cheap, in-process things a single legitimate user with a
-> single phone can do to make agent-driven behavior indistinguishable from
-> their own behavior.
+> ### This is NOT
+>
+> - Not a guide to evade platform anti-abuse for spam / mass DM / fake
+>   engagement / lead-gen funnels.
+> - Not a guide to operate multiple accounts beyond what a single human user
+>   does.
+> - Not a guide to defeat captcha, device verification, or login walls.
+> - Not a justification for ignoring platform Terms of Service.
+>
+> If your use case requires staying under detector limits because you are
+> doing something the platform would refuse if it knew — this document does
+> not help you, and `everything-mobile` is the wrong library. See the
+> README's "What this is NOT" section.
+>
+> ### This IS
+>
+> - Reference numbers for the defaults baked into `SessionGovernor` and
+>   `ContentLinter`. They are intentionally **conservative** — half or less
+>   of even cautious public-reported thresholds.
+> - Behavioral-biometrics signals the library compensates for *by default*
+>   (log-normal touch durations, jittered tap positions) so an AI agent's
+>   inherently clean timing doesn't make a legitimate test session look
+>   abnormal.
+> - Documentation for defenders / researchers studying how platforms
+>   distinguish automation from genuine use.
 >
 > Last reviewed: 2026-05-21. **Numbers older than 12 months are flagged
-> with "[stale-risk]"** — re-verify before relying.
+> with "[stale-risk]"** — re-verify before relying. Platform rules change
+> faster than this doc.
 
 ---
 
@@ -534,7 +549,7 @@ the project already pulls in (Python stdlib + uiautomator2).
 
 Accessed 2026-05-21 unless otherwise noted.
 
-- <a id="strat"></a>[strategy.md] Internal: `(internal sample, not vendored)/strategy.md` (2025–2026 实测 baseline; the values for inter-action delay, daily caps for Douyin/XHS/WeChat-Channel, template-reuse limits, and 7-day warm-up come from this).
+- <a id="strat"></a>[internal-baseline] An internal 2025–2026 empirical baseline (not vendored). Where this doc cites it, the cited number is corroborated by at least one public source below.
 - <a id="newrank"></a>[newrank 2025] 抖音私信发送限制和封号风险全解析, 新榜有赚, 2025. <https://a.newrank.cn/trade/news/8045> — specific cooldowns (5 msg / 60 s / 10–30 min), "80–100 DMs flag" threshold, 3-violation escalation.
 - <a id="tuokeba"></a>[tuokeba 2026] 抖音3月新规, 拓客吧, 2026-03. <https://www.tuokeba.com/rule/618.html> — auto-reply caps (60/min, 200/hr, 400/day), 2026 推流规则.
 - <a id="cnblogs"></a>[cnblogs warm-up] 抖音最新7天养号教程规则汇总攻略. <https://www.cnblogs.com/maidaishe/p/13682410.html> — day-by-day warm-up.
