@@ -121,6 +121,25 @@ class Device:
             )
         return proc.stdout
 
+    def install_apk(self, apk_path: str, timeout_s: int = 120) -> None:
+        """`adb -s <serial> install -r <apk>` -- stays inside Layer 1."""
+        argv = ["adb", "-s", self.serial, "install", "-r", apk_path]
+        try:
+            proc = subprocess.run(
+                argv,
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise EmError(
+                ErrorCode.ADB_TIMEOUT,
+                f"adb install timed out after {timeout_s}s",
+            ) from exc
+        if proc.returncode != 0:
+            raise map_adb_stderr(proc.stderr, proc.returncode)
+
     def pull(self, remote: str, local: str, timeout_s: int = DEFAULT_TIMEOUT_S) -> None:
         argv = ["adb", "-s", self.serial, "pull", remote, local]
         proc = subprocess.run(
