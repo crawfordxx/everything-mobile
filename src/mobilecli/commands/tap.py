@@ -17,10 +17,12 @@ def add_parser(subparsers: Any) -> None:
 
 
 @envelope(command="tap")
-def _run(*, device: str, x: int, y: int) -> dict[str, Any]:
+def _run(*, device: str, x: int, y: int, raw: bool) -> dict[str, Any]:
     dev = Device.from_serial(device or None)
-    return core_input.tap_raw(dev, x, y)
+    if raw:
+        return core_input.tap_raw(dev, x, y)
+    return core_input.tap_humanized(dev, x=x, y=y)
 
 
 def run(args: argparse.Namespace) -> str:
-    return _run(device=args.serial or "", x=args.x, y=args.y)
+    return _run(device=args.serial or "", x=args.x, y=args.y, raw=args.raw)

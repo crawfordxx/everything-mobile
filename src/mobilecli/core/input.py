@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import random
 import shlex
+import time
 from typing import Any
 
 from mobilecli.adb.device import Device
@@ -98,6 +99,26 @@ def type_text_raw(device: Device, text: str) -> dict[str, Any]:
     _ime.set_adbkeyboard(device)
     try:
         device.shell(f"am broadcast -a ADB_INPUT_TEXT --es msg {shlex.quote(text)}")
+        return {"chars": len(text), "mode": "adbkeyboard"}
+    finally:
+        _ime.restore_ime(device, prev)
+
+
+def type_text_humanized(device: Device, text: str) -> dict[str, Any]:
+    """Humanized type. ASCII: per-char with log-normal delay. CJK: clipboard via
+    ADBKeyboard broadcast + 200-600 ms post-paste dwell.
+    """
+    if text.isascii():
+        for ch in text:
+            escaped = ch.replace(" ", "%s")
+            device.shell(f"input text {shlex.quote(escaped)}")
+            time.sleep(_hz.per_char_type_delay_s())
+        return {"chars": len(text), "mode": "input"}
+    prev = _ime.current_ime(device)
+    _ime.set_adbkeyboard(device)
+    try:
+        device.shell(f"am broadcast -a ADB_INPUT_TEXT --es msg {shlex.quote(text)}")
+        time.sleep(random.uniform(0.2, 0.6))
         return {"chars": len(text), "mode": "adbkeyboard"}
     finally:
         _ime.restore_ime(device, prev)

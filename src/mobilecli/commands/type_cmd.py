@@ -16,10 +16,12 @@ def add_parser(subparsers: Any) -> None:
 
 
 @envelope(command="type")
-def _run(*, device: str, text: str) -> dict[str, Any]:
+def _run(*, device: str, text: str, raw: bool) -> dict[str, Any]:
     dev = Device.from_serial(device or None)
-    return core_input.type_text_raw(dev, text)
+    if raw:
+        return core_input.type_text_raw(dev, text)
+    return core_input.type_text_humanized(dev, text)
 
 
 def run(args: argparse.Namespace) -> str:
-    return _run(device=args.serial or "", text=args.text)
+    return _run(device=args.serial or "", text=args.text, raw=args.raw)

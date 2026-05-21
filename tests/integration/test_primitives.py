@@ -51,10 +51,12 @@ def test_screenshot_returns_valid_path(device_serial: str, tmp_path):
 
 @pytest.mark.integration
 def test_tap_at_safe_coords(device_serial: str):
-    payload = _cli("--serial", device_serial, "tap", "1", "1")
+    """Humanized tap jitters ±8 px around target and emits non-zero duration."""
+    payload = _cli("--serial", device_serial, "tap", "100", "100")
     assert payload["ok"] is True, payload
-    assert payload["data"]["x"] == 1
-    assert payload["data"]["y"] == 1
+    assert abs(payload["data"]["x"] - 100) <= 8
+    assert abs(payload["data"]["y"] - 100) <= 8
+    assert payload["data"]["duration_ms"] > 0
 
 
 @pytest.mark.integration
