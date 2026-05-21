@@ -81,7 +81,10 @@ def bezier_swipe_points(
         x += random.uniform(-wobble_px * 0.4, wobble_px * 0.4)
         y += random.uniform(-wobble_px * 0.4, wobble_px * 0.4)
         pts.append((int(x), int(y)))
+    # Pin start + end exactly; otherwise wobble at the endpoints can drift
+    # taps off the target element when Phase C plugins emit segment-by-segment.
     pts[0] = (sx, sy)
+    pts[-1] = (ex, ey)
     return pts
 
 
