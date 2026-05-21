@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "everything-mobile"
+version = "0.1.0"
+description = "AI-friendly CLI for driving Android phones — no AI inside, designed for Claude Code / Codex / openclaw"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "everything-mobile contributors" }]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+mobilecli = "mobilecli.cli:main"
+
+[project.entry-points."mobilecli.apps"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mobilecli"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: requires EM_INTEGRATION=1 and a connected device",
+    "e2e: requires EM_E2E=1 + EM_ALLOW_COMMIT=1, has side effects",
+]
