@@ -91,21 +91,19 @@ adb shell ime enable com.android.adbkeyboard/.AdbIME
 
 ## CLI 命令全表
 
-### 通用原语（Layer 2）
+### 顶层命令（5 个）
 
-| 命令 | 用途 | JSON `data` 关键字段 | 人类化默认开 |
-|---|---|---|---|
-| `mobilecli devices` | 列出连接的设备 | `devices[]` | — |
-| `mobilecli screenshot [-o PATH]` | 截屏到 PNG | `path, size, width, height` | — |
-| `mobilecli tap X Y` | 点击坐标 | `x, y, duration_ms` | ✓ jitter + 时长随机 |
-| `mobilecli swipe X1 Y1 X2 Y2 [--duration ms]` | 滑动 | `x1, y1, x2, y2, duration_ms, points` | ✓ 端点 jitter + 时长随机 + bezier 遥测点 |
-| `mobilecli type "文字"` | 输入文字 | `chars, mode` | ✓ 每字符 log-normal 间隔 + ADBKeyboard for CJK |
-| `mobilecli keyevent {back\|home\|enter\|recent\|menu\|...}` | 按键 | `code` | — |
-| `mobilecli dump [-o PATH]` | uiautomator XML | `path, size` | — |
-| `mobilecli launch <package>` | 启动 app | `package` | — |
-| `mobilecli install <apk>` | 安装 APK | `apk, result` | — |
-| `mobilecli foreground` | 当前前台 app | `package, activity` | — |
-| `mobilecli doctor` | 环境自检 + 风控信号 | `checks[], summary` | — |
+| 命令 | 用途 | JSON `data` 关键字段 |
+|---|---|---|
+| `mobilecli devices` | 列出连接的设备 | `devices[]` |
+| `mobilecli screenshot [-o PATH]` | 截屏到 PNG | `path, size, width, height` |
+| `mobilecli doctor` | 环境自检 + 风控指纹信号 | `checks[], summary` |
+| `mobilecli douyin <verb>` | 抖音 app 操作 | 见下 |
+| `mobilecli xiaohongshu <verb>` | 小红书 app 操作 | 见下 |
+
+> 设计哲学：CLI 表面**只**有高层意图（app verb）+ 必要的环境查询（devices/screenshot/doctor）。
+> 低层原语（tap/swipe/type/keyevent/dump 等）是 Layer 2 内部 API，plugin 通过 `ExecContext` 调用，不暴露成 CLI 命令。
+> 这样 AI 驱动者拿到 `mobilecli douyin search` 而不是被一堆 `tap X Y` 淹没。需要 raw 调试时可以 `python -c "from mobilecli.core import input as i; ..."` 直接走 Python API。
 
 ### App 子命令（Layer 3）
 

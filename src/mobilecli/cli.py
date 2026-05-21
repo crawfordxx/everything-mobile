@@ -14,18 +14,13 @@ from typing import Any
 
 from mobilecli.envelope import ErrorCode
 
-# Registry: subcommand name -> module path.
+# Top-level CLI surface is intentionally minimal: high-level only.
+# Low-level primitives (tap/swipe/type/keyevent/dump/launch/install/foreground)
+# remain in mobilecli.core.* as the Layer 2 API plugins call through ExecContext,
+# but they are not exposed as CLI verbs.
 COMMAND_MODULES: dict[str, str] = {
     "devices": "mobilecli.commands.devices",
     "screenshot": "mobilecli.commands.screenshot",
-    "tap": "mobilecli.commands.tap",
-    "swipe": "mobilecli.commands.swipe",
-    "type": "mobilecli.commands.type_cmd",
-    "keyevent": "mobilecli.commands.keyevent",
-    "dump": "mobilecli.commands.dump",
-    "launch": "mobilecli.commands.launch",
-    "install": "mobilecli.commands.install",
-    "foreground": "mobilecli.commands.foreground",
     "doctor": "mobilecli.commands.doctor",
 }
 
@@ -87,13 +82,19 @@ def _load_commands(sub: Any) -> dict[str, Any]:
 
     # Layer 3: app plugins -- each is a top-level subcommand with nested verbs
     for app_name, app_obj in load_apps().items():
+        verb_names = ", ".join(app_obj.verbs.keys())
         app_parser = sub.add_parser(
             app_name,
-            help=f"{app_obj.package} ({len(app_obj.verbs)} verbs)",
+            help=f"{app_obj.package} ({len(app_obj.verbs)} verbs: {verb_names})",
+            description=(
+                f"{app_obj.package} — available verbs: {verb_names}.\n"
+                f"Run `mobilecli {app_name} <verb> --help` for verb-specific args."
+            ),
         )
         verb_sub = app_parser.add_subparsers(dest="verb", metavar="VERB")
         for verb_name, verb in app_obj.verbs.items():
-            vp = verb_sub.add_parser(verb_name)
+            doc = (verb.fn.__doc__ or "").strip().split("\n", 1)[0]
+            vp = verb_sub.add_parser(verb_name, help=doc or None, description=verb.fn.__doc__)
             if verb.add_args is not None:
                 verb.add_args(vp)
             if verb.requires_commit_flag:
