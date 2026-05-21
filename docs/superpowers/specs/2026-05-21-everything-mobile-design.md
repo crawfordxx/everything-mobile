@@ -32,14 +32,17 @@ Open-source CLI that lets external AI agents (Claude Code, Codex CLI, openclaw, 
 
 ## 2. Architecture
 
-Four layers, each only depends on the layer directly below it.
+Five layers, each only depends on the layer directly below it.
 
 ```
 Layer 3 — App plugins              mobilecli.apps.douyin, mobilecli.apps.xiaohongshu
-Layer 2 — Generic primitives       screenshot, input (tap/swipe/type/keyevent), ui (dump+parse), app (launch/install/fg), ime
-Layer 1 — ADB device backend       Device class: serial selection, shell exec, push/pull, timeouts, error mapping
-Layer 0 — External (not ours)      adb binary, the Android device, the calling AI tool
+Layer 2.5 — Humanization & safety  humanize (timing/jitter/bezier), governor (caps), linter (banned phrases), device_check
+Layer 2  — Generic primitives      screenshot, input (tap/swipe/type/keyevent), ui (dump+parse), app (launch/install/fg), ime
+Layer 1  — ADB device backend      Device class: serial selection, shell exec, push/pull, timeouts, error mapping
+Layer 0  — External (not ours)     adb binary, the Android device, the calling AI tool
 ```
+
+Layer 2.5 is **not optional**. Layer 2 primitives apply humanization (jitter + delay) by default; bypassing requires `--raw` on the CLI (debugging only) or `ctx.raw_input` in plugin code (forbidden for production verbs). Rationale: an AI driver naturally produces clean, fast, pixel-perfect actions — exactly the signature behavioral-biometrics detectors are tuned for. The library must compensate.
 
 ### Design rules
 
@@ -60,6 +63,8 @@ Root command: `mobilecli`.
 | `--pretty` | Pretty-print JSON output (default is compact). |
 | `--verbose` | Send debug logs to stderr. |
 | `--timeout SEC` | Per-command timeout (default 30s). |
+| `--raw` | Disable humanization (no jitter, no delay, no governor, no linter). For debugging only — emits a warning on stderr. Requires `EM_ALLOW_RAW=1`. |
+| `--account NAME` | Identifier for `SessionGovernor` persistence path (default `default`). Each account has its own daily-cap counter at `~/.everything-mobile/sessions/<account>.json`. |
 
 JSON is always the output format — there is no human-only mode.
 
@@ -84,11 +89,14 @@ mobilecli doctor                           Environment self-check.
 ```
 mobilecli douyin launch                    Launch + verify foreground.
 mobilecli douyin search --keyword K [--limit N]
-                                            Tap home search affordance → type K → submit → parse result list → JSON.
+                                            Read-only: tap home search affordance → type K → submit → parse result list → JSON.
+                                            DOES NOT tap any result. Returns {results: [{index, cx, cy, title, author}, ...]}.
+mobilecli douyin open --rank N             Tap the Nth search result from the current search-results screen. Lands on video detail.
 mobilecli douyin detail                    Assume current screen is a video detail. Parse like/comment/share counts.
 mobilecli douyin comment --text T [--commit]
-                                            Open comment panel, fill text. WITHOUT --commit: leave as dry-run, return what would happen.
-                                            WITH --commit: actually press send. Requires EM_ALLOW_COMMIT=1 env.
+                                            Open comment panel, fill text. WITHOUT --commit: leave as dry-run.
+                                            WITH --commit: actually press send. Requires EM_ALLOW_COMMIT=1 env + governor budget.
+mobilecli douyin back                      Press back. Recovery primitive used between iterations.
 ```
 
 ### Xiaohongshu verbs
@@ -96,9 +104,36 @@ mobilecli douyin comment --text T [--commit]
 ```
 mobilecli xiaohongshu launch               Launch. If first launch lands on login wall, press back + relaunch once.
 mobilecli xiaohongshu search --keyword K [--limit N]
-mobilecli xiaohongshu detail
+                                            Read-only: returns result list. DOES NOT tap any result.
+mobilecli xiaohongshu open --rank N        Tap the Nth search result. Lands on note detail.
+mobilecli xiaohongshu detail               Parse note detail (likes/comments/collects/title/author).
 mobilecli xiaohongshu comment --text T     DRY-RUN ONLY in v1. No --commit flag. Send button is never pressed.
+mobilecli xiaohongshu back                 Press back.
 ```
+
+### Composition model (important)
+
+The CLI is **stateless and orthogonal**: `search` only searches, `open` only navigates, `comment` only comments on the currently-foregrounded detail. There is **no `--all` or batch flag** — the AI driver loops in its own code. This keeps each command auditable, each tap risk-attributable to one input, and lets the governor pace operations:
+
+```bash
+# Search returns a list (no tap)
+mobilecli xiaohongshu search --keyword 穿搭 --limit 10
+# → {"data": {"results": [{"index": 1, "title": "...", ...}, ...]}}
+
+# AI picks one, opens it (one tap)
+mobilecli xiaohongshu open --rank 3
+
+# Comment on the now-foreground detail (humanized + linted + governor-gated)
+mobilecli xiaohongshu comment --text "学到了"
+
+# Back to results to pick the next
+mobilecli keyevent back
+
+# Repeat. The SessionGovernor enforces inter-action delay + daily cap.
+# When the cap is hit, `comment` returns RATE_LIMITED and the AI must stop.
+```
+
+For batch operations the AI orchestrates the loop. The library guarantees the per-action humanization but explicitly does NOT provide a "comment on all N results" verb — that would hide pacing from the AI and concentrate all the risk in one CLI call.
 
 ## 4. Plugin system
 
@@ -199,6 +234,9 @@ tiktok = "mobilecli_tiktok:app"
 | `ELEMENT_NOT_FOUND` | expected UI element missing | `dump` to inspect, UI may have changed |
 | `IME_NOT_SET` | ADBKeyboard not active | `doctor` will reset it |
 | `COMMIT_REFUSED` | tried real send without env gate | set `EM_ALLOW_COMMIT=1` |
+| `RATE_LIMITED` | governor refused (per-day / per-hour cap hit) | wait until reset; check `~/.everything-mobile/sessions/<account>.json` |
+| `CONTENT_BANNED` | linter blocked the text (phone/微信/QR/etc.) | edit the text; or pass `--allow-banned-phrase` and `EM_ALLOW_RAW=1` (testing only) |
+| `WARMUP_REQUIRED` | new account quota not yet ramped | wait until day-N of warm-up curve, or override via `--account-age-days N` |
 | `UNKNOWN` | uncaught exception | check stderr with `--verbose` |
 
 ### Verb data shapes
@@ -272,10 +310,22 @@ everything-mobile/
 │  ├─ core/                      Layer 2 primitives
 │  │  ├─ __init__.py
 │  │  ├─ screenshot.py
-│  │  ├─ input.py                tap/swipe/type/keyevent + tap_node helper
+│  │  ├─ input.py                tap/swipe/type/keyevent + tap_node helper (humanized by default)
 │  │  ├─ ui.py                   dump + find_by_text/content_desc/resource_id/class
 │  │  ├─ app.py                  launch/install/foreground/ensure_foreground
 │  │  └─ ime.py                  ADBKeyboard setup
+│  │
+│  ├─ safety/                    Layer 2.5 — humanization & safety (NOT OPTIONAL)
+│  │  ├─ __init__.py
+│  │  ├─ humanize.py             log-normal delay, tap jitter (60% inner box),
+│  │  │                          bezier swipe (30+ pts, ease-in-out + wobble),
+│  │  │                          read_pause(screen_hash), per-char type delay
+│  │  ├─ governor.py             SessionGovernor: per-account daily/hourly/session caps,
+│  │  │                          warm-up ramp, persistence under ~/.everything-mobile/sessions/
+│  │  ├─ linter.py               ContentLinter: regex blocks for phone/微信/VX/QR/扫码/戳我,
+│  │  │                          per-platform template-reuse counter
+│  │  └─ device_check.py         Detects ADBKeyboard-as-IME, adb_enabled=1, accessibility-svc.
+│  │                              Reports degraded-mode signals on `doctor`.
 │  │
 │  ├─ plugin/                    Layer 3 framework
 │  │  ├─ __init__.py
@@ -334,8 +384,13 @@ everything-mobile/
 - [ ] `mobilecli douyin comment --text "..."` runs as dry-run by default; `--commit` with `EM_ALLOW_COMMIT=1` posts and verifies visibility.
 - [ ] `mobilecli xiaohongshu comment --text "..."` runs as dry-run; no commit path exists.
 - [ ] Unit test coverage ≥ 70% on `envelope`, `registry`, `core.ui` (XML parsing), `cli` dispatch.
+- [ ] **Humanization layer is the default path.** `mobilecli tap X Y` (no flags) applies jitter + delay; `mobilecli --raw tap X Y` (with `EM_ALLOW_RAW=1`) bypasses. Unit tests verify both paths.
+- [ ] **`SessionGovernor` enforces caps.** Per-account JSON at `~/.everything-mobile/sessions/<account>.json` tracks per-day / per-hour counts. Exceeding the cap returns `RATE_LIMITED`. Caps come from `docs/anti-risk-control.md` Douyin / XHS tables.
+- [ ] **`ContentLinter` blocks instant-shadowban triggers.** Comment / DM verbs reject any text matching the regex set (`加微信`, `VX`, `扫码`, `戳我`, 11-digit phone, etc.). Override requires both `--allow-banned-phrase` and `EM_ALLOW_RAW=1`.
+- [ ] **`doctor` reports humanization status** + device-fingerprint signals (`ADBKeyboard` IME, `adb_enabled`, accessibility services).
 - [ ] README contains a 60-second asciinema or terminal-recorded demo.
 - [ ] `docs/ai-usage.md` shows a copy-paste recipe for Claude Code: "ask Claude to do X → Claude calls these commands → here's the trace".
+- [ ] `docs/anti-risk-control.md` is treated as a paired-change file: when caps change there, plugin defaults change in the same PR.
 
 ## 8. Testing strategy
 
@@ -371,6 +426,65 @@ def verify_test_device():
 
 `comment --commit` additionally refuses to run unless `EM_ALLOW_COMMIT=1` is set in the environment.
 
+## 8.5. Humanization defaults (Layer 2.5)
+
+Concrete defaults that Layer 2 primitives apply unless `--raw` is set. Sourced from `docs/anti-risk-control.md`.
+
+### Timing
+
+| Operation | Distribution | Notes |
+|---|---|---|
+| Inter-tap delay | log-normal(μ=1.2 s, σ=0.4 s), clamped [0.3, 8] | Per Castle 2025 — variance matters more than magnitude |
+| Read-pause (new screen) | uniform(1.5, 5) s scaled by visible text length | First action on a never-before-seen screen-hash |
+| Read-pause (revisit) | uniform(0.3, 1.2) s | Humans don't re-read content |
+| Per-char type delay | log-normal(μ=120 ms, σ=0.6) | ASCII only; CJK uses clipboard paste + 200–600 ms post-paste dwell |
+| Touch duration (tap) | log-normal(μ=90 ms, σ=0.5) | `input tap` is 0 ms — detectable; we always emit duration |
+| Session length | 25–45 min then forced cooldown 8–20 min | Enforced by `SessionGovernor` |
+
+### Movement
+
+- **Tap jitter**: sample target within the inner 60% box of the element bounds (not the geometric center). Default `jitter=True` on every `tap`.
+- **Swipe trajectory**: Bezier curve, 30+ intermediate points, ease-in-out velocity, 4–15 px lateral wobble at each segment, 80–200 ms leading dwell, 50–150 ms trailing dwell. `curve='straight'` only available in unit tests, never via CLI.
+- **Scroll**: same Bezier model as swipe; the library never emits a single-segment scroll.
+
+### Daily caps (seed values, configurable per account)
+
+Sourced from `docs/anti-risk-control.md` §"Platform-specific tables". Plugins ship a copy in code; when the doc changes, both change in the same PR.
+
+| Action | Douyin | Xiaohongshu |
+|---|---|---|
+| Comments to others | 100 / 50 (new) | 20 |
+| DMs to strangers | 30–50 (new) / 80 (mature) | 20 |
+| Total DMs/day | 100 | 30 |
+| Follow / unfollow | 100 | 30 |
+| Likes | 200 (mature) / 100 (new) | 100 |
+| Hourly cap (any verb) | 60 | 30 |
+| Same-template reuse (24 h) | 15 | 5 |
+
+### Content lint (regex block list, raised as `CONTENT_BANNED`)
+
+Default block-on-match regexes:
+
+- `加.{0,4}微信|加.{0,4}V[X信]|VX[\\s:：]*\\w+`
+- `扫.{0,3}码|扫.{0,3}二维码`
+- `戳我|私我|滴滴我`
+- `\\b1[3-9]\\d{9}\\b` (11-digit mainland mobile)
+- `q[qQ][\\s:：]*\\d{5,}` (QQ number)
+- `wx[\\s:：]*\\w+` (WeChat ID hint)
+
+Plus per-platform extras living in plugin code.
+
+### Device-fingerprint check (`doctor` reports)
+
+| Signal | Detection | Mitigation |
+|---|---|---|
+| `ADBKeyboard` set as default IME at startup | `settings get secure default_input_method` | Switch to ADBKeyboard only during type, restore after |
+| `settings.global.adb_enabled=1` | shell read | Can't hide; warn in degraded mode |
+| Accessibility service of our package enabled | `settings.secure.enabled_accessibility_services` | Don't ship one for v1 |
+| Constant accelerometer values | sensor read (not implemented v1) | Out of scope; this is why we target real devices |
+
+Under degraded mode (any strong signal detected at startup): daily caps × 0.5, time-of-day window tightened to active hours only, type-by-clipboard only.
+
 ## 9. Known gotchas (from UI tree research, 2026-05-21)
 
 Encode these as documented retries / preconditions in Layer 2.
@@ -400,7 +514,55 @@ These do not block v1 implementation; capture them for v2.
 
 ## 11. License & open-source posture
 
-- MIT license.
-- Repo name on GitHub: `everything-mobile` (or `mobilecli` if available).
+- **License:** MIT.
+- **Repo name** on GitHub: `everything-mobile` (or `mobilecli` if available).
+- **The reference code is NOT vendored in.** Only general patterns informed the design.
+
+### README requirements (DoD)
+
+The README is the project front door. It must contain, in this order:
+
+1. **Disclaimer block at the very top** (English + 中文, both), shielding the maintainer:
+
+   > **This project is for learning and security research only.** It is a generic Android automation library that demonstrates how AI agents can drive mobile apps. The maintainers do not endorse, recommend, or take responsibility for any use that violates the terms of service of any third-party platform (including but not limited to Douyin, Xiaohongshu, WeChat, TikTok). Users are solely responsible for their own actions, account safety, and compliance with applicable laws. Use of this project to spam, harass, mass-message, fake engagement, or evade platform anti-abuse measures is **explicitly out of scope** and unsupported. By using this software you accept all risk including but not limited to account suspension, rate-limiting, shadowban, and permanent device-level platform restrictions.
+   >
+   > **本项目仅用于学习与安全研究。** 这是一个通用的 Android 自动化库，演示 AI 代理如何驱动移动 App。维护者不鼓励、不推荐、不为任何违反第三方平台（包括但不限于抖音、小红书、微信、TikTok）服务条款的使用行为负责。使用者须独立承担行为、账号安全与法律合规责任。使用本项目用于刷量、骚扰、群发、伪造互动、规避平台反作弊机制等行为，**明确不在本项目支持范围内**。使用本软件即代表接受所有风险，包括但不限于账号封禁、限流、限评、设备级封锁。
+
+2. **What this is** — one paragraph, plain language. AI-driven phone automation, no AI inside the lib.
+
+3. **Quickstart** — `pipx install everything-mobile` + 3 example commands.
+
+4. **CLI feature table** (the one the user requested) — required columns:
+
+   | Command | Purpose | Example | JSON shape | Humanized? |
+   |---|---|---|---|---|
+   | `mobilecli devices` | list connected devices | `mobilecli devices` | `{ok, data: {devices: [...]}}` | — |
+   | `mobilecli screenshot` | capture screen, write PNG | `mobilecli screenshot -o /tmp/x.png` | `{data: {path, size, width, height}}` | — |
+   | `mobilecli tap X Y` | tap | `mobilecli tap 540 1200` | `{data: {x, y, duration_ms}}` | yes (jitter + duration) |
+   | `mobilecli swipe ...` | gesture | `mobilecli swipe 540 1800 540 600` | `{data: {points: [...]}}` | yes (bezier + wobble) |
+   | `mobilecli type "..."` | input text | `mobilecli type "美食"` | `{data: {chars}}` | yes (per-char delay) |
+   | `mobilecli dump` | uiautomator XML | `mobilecli dump -o /tmp/x.xml` | `{data: {path, size}}` | — |
+   | `mobilecli launch <pkg>` | open app | `mobilecli launch com.ss.android.ugc.aweme` | `{data: {foreground}}` | — |
+   | `mobilecli douyin search` | structured search | `mobilecli douyin search --keyword 美食 --limit 5` | `{data: {keyword, results}}` | yes |
+   | `mobilecli douyin comment` | post a comment | `mobilecli douyin comment --text "..." --commit` | `{data: {committed}}` | yes + linter |
+   | `mobilecli xiaohongshu search` | structured search | `mobilecli xiaohongshu search --keyword 穿搭` | `{data: {keyword, results}}` | yes |
+   | … all primitives + verbs … | | | | |
+
+5. **Risk-control rules** — short prose explaining what `SessionGovernor` and `ContentLinter` do, with a link to `docs/anti-risk-control.md`. State that daily caps are enforced and `--raw` is debugging-only.
+
+6. **Usage risks** — concrete list (account suspension / rate-limiting / shadowban / permanent device-level bans) so users understand what they are signing up for.
+
+7. **What this is not** — explicit list: not a spam tool, not a follower-farm tool, not an engagement-faker, not a fraud framework. We refuse PRs for those features.
+
+8. **Plugin authoring** — link to `docs/plugin-guide.md`.
+
+9. **Contributing** — link.
+
+10. **License** — MIT.
+
+### Other open-source posture decisions
+
 - README front-loads: "no AI inside; designed to be driven by Claude Code, Codex, openclaw, etc."
-- The reference code is **NOT** vendored in. Only general patterns informed the design.
+- No mention of any private brand ((internal) / (internal) / (internal sample) / internal model / (internal)) anywhere in the public repo.
+- The reference code's marketing comment templates are **NOT** included as fixtures, examples, or defaults. They are explicitly the kind of payload `ContentLinter` exists to refuse.
+- v1 ships with no example evil prompts. The example AI-usage doc demos benign verbs only (search results to JSON, read comment counts).
