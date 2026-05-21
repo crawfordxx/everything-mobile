@@ -72,7 +72,7 @@ results=$(mobilecli xiaohongshu search --keyword 穿搭 --limit 10 \
 for i in $results; do
     mobilecli xiaohongshu open --rank "$i"
     mobilecli xiaohongshu detail | jq .
-    mobilecli keyevent back
+    mobilecli xiaohongshu back
 done
 ```
 

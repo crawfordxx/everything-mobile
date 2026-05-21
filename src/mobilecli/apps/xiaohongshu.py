@@ -61,6 +61,7 @@ def _search_args(p: argparse.ArgumentParser) -> None:
 
 @app.verb("search", add_args=_search_args)
 def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """Search notes. Returns a result list; does NOT tap any result."""
     ctx.app.ensure_foreground()
     time.sleep(1.5)
 
@@ -111,6 +112,7 @@ def _open_args(p: argparse.ArgumentParser) -> None:
 
 @app.verb("open", add_args=_open_args)
 def open_result(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """Tap the Nth search result note from the current results screen."""
     xml = Path(ctx.ui.dump()["path"]).read_text()
     cards = ctx.ui.find_all_by_resource_id(xml, "com.xingin.xhs:id/searchNoteCard")
     if args.rank < 1 or args.rank > len(cards):
@@ -137,6 +139,7 @@ def _count(node: dict[str, Any] | None) -> str:
 
 @app.verb("detail")
 def detail(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """Read like / comment / collect counts from the current note detail."""
     xml = Path(ctx.ui.dump()["path"]).read_text()
     like = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/noteLikeLayout")
     comment = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/noteCommentLayout")
@@ -146,6 +149,17 @@ def detail(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
         "comments": _count(comment),
         "collects": _count(collect),
     }
+
+
+# ----- back --------------------------------------------------------------------
+
+
+@app.verb("back")
+def back(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """Press the system back button (recovery primitive used between iterations)."""
+    ctx.input.keyevent("back")
+    time.sleep(0.6)
+    return {"foreground": ctx.app.foreground()}
 
 
 # ----- comment (DRY-RUN ONLY) --------------------------------------------------

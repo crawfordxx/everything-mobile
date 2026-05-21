@@ -31,6 +31,7 @@ app = App(
 
 @app.verb("launch")
 def launch(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """Launch Douyin and return the resulting foreground package + activity."""
     ctx.app.launch()
     time.sleep(3)
     return {"foreground": ctx.app.foreground(), "package": PACKAGE}
@@ -46,6 +47,7 @@ def _search_args(p: argparse.ArgumentParser) -> None:
 
 @app.verb("search", add_args=_search_args)
 def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """Search videos. Returns a result list; does NOT tap any result."""
     ctx.app.ensure_foreground()
     time.sleep(1.5)
 
@@ -98,6 +100,7 @@ def _open_args(p: argparse.ArgumentParser) -> None:
 
 @app.verb("open", add_args=_open_args)
 def open_result(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """Tap the Nth search result card from the current results screen."""
     xml = Path(ctx.ui.dump()["path"]).read_text()
     cards = ctx.ui.find_all_by_resource_id(xml, "com.ss.android.ugc.aweme:id/q21")
     if args.rank < 1 or args.rank > len(cards):
@@ -130,6 +133,7 @@ def _parse_count(s: str) -> str:
 
 @app.verb("detail")
 def detail(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """Read like / comment / share / collect counts from the current video detail."""
     xml = Path(ctx.ui.dump()["path"]).read_text()
     like = ctx.ui.find_by_resource_id(xml, "com.ss.android.ugc.aweme:id/gl1")
     comment = ctx.ui.find_by_resource_id(xml, "com.ss.android.ugc.aweme:id/eql")
@@ -141,6 +145,17 @@ def detail(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
         "shares": _parse_count(share["content_desc"]) if share else "",
         "collects": _parse_count(collect["content_desc"]) if collect else "",
     }
+
+
+# ----- back --------------------------------------------------------------------
+
+
+@app.verb("back")
+def back(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """Press the system back button (recovery primitive used between iterations)."""
+    ctx.input.keyevent("back")
+    time.sleep(0.6)
+    return {"foreground": ctx.app.foreground()}
 
 
 # ----- comment -----------------------------------------------------------------
