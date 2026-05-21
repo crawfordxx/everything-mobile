@@ -63,16 +63,22 @@ def swipe_humanized(
     start: tuple[int, int],
     end: tuple[int, int],
 ) -> dict[str, Any]:
-    """Humanized swipe -- bezier-shaped trajectory, randomized duration.
+    """Humanized swipe.
 
-    Issues a single `input swipe` with duration in [600, 1200] ms. The bezier
-    points are computed (for telemetry) but not multi-segment emitted --
-    multi-segment requires minitouch, deferred to v2.
+    v1 LIMITATION (codex review 2026-05-21): we emit a single straight `adb
+    shell input swipe X1 Y1 X2 Y2 dur` with randomized duration ∈ [600,1200] ms.
+    The bezier points are computed for telemetry / future use but NOT emitted
+    as multi-segment, because `input swipe` only supports straight-line
+    interpolation. True bezier-shaped gestures require minitouch / sendevent
+    multi-segment dispatch -- deferred to v2.
+
+    Endpoints are jittered ±4 px so two identical-input swipes don't produce
+    bit-identical `input swipe` lines.
     """
     pts = _hz.bezier_swipe_points(start, end, n_points=35)
     duration_ms = random.randint(600, 1200)
-    sx, sy = start
-    ex, ey = end
+    sx, sy = _hz.jittered_xy(start[0], start[1], radius=4)
+    ex, ey = _hz.jittered_xy(end[0], end[1], radius=4)
     device.shell(f"input swipe {sx} {sy} {ex} {ey} {duration_ms}")
     return {
         "x1": sx,
