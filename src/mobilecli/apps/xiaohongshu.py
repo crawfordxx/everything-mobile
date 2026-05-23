@@ -138,6 +138,7 @@ def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     search_node = None
     for rid in (
         "com.xingin.xhs:id/iv_search",
+        "com.xingin.xhs:id/search",
         "com.xingin.xhs:id/mSearchToolBarSearchBtn",
     ):
         search_node = ctx.ui.find_by_resource_id(xml, rid)
@@ -164,12 +165,37 @@ def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
         inp = _first_edittext(xml)
     if inp is None:
         raise EmError(ErrorCode.ELEMENT_NOT_FOUND, "XHS search input not found")
-    ctx.input.tap_node(inp)
-    time.sleep(0.8)
-    ctx.input.type_text(args.keyword)
-    time.sleep(1.2)
-    ctx.input.keyevent(66)
-    time.sleep(3)
+    # IME + clear handling: XHS search input on this build has pre-filled
+    # text ("搜索, ") plus a rotating trending-keyword hint ("拼多多v3怎么开"
+    # etc). type_text only appends, so without an explicit clear we end up
+    # either appending after "搜索, " or — if the broadcast doesn't land on
+    # the focused field — letting XHS submit the hint as the default query.
+    # That's why a user reported searching "扫地机器人" but landing on the
+    # trending "石头P20 UP好价" results. Pre-swap to ADBKeyboard, focus, then
+    # CLEAR_TEXT broadcast, then INPUT_TEXT, then Enter.
+    needs_cjk = not args.keyword.isascii()
+    prev_ime = _ime.current_ime(ctx.device) if needs_cjk else None
+    if needs_cjk:
+        _ime.set_adbkeyboard(ctx.device)
+        time.sleep(0.6)
+
+    try:
+        ctx.input.tap_node(inp)
+        time.sleep(0.8)
+        # ADBKeyboard CLEAR_TEXT removes the existing text + escapes any
+        # selection state. Safe on builds where the field is already empty.
+        ctx.device.shell("am broadcast -a ADB_CLEAR_TEXT")
+        time.sleep(0.4)
+        if needs_cjk:
+            ctx.device.shell(f"am broadcast -a ADB_INPUT_TEXT --es msg {shlex.quote(args.keyword)}")
+        else:
+            ctx.input.type_text(args.keyword)
+        time.sleep(1.2)
+        ctx.input.keyevent(66)
+        time.sleep(3)
+    finally:
+        if needs_cjk and prev_ime:
+            _ime.restore_ime(ctx.device, prev_ime)
 
     xml = Path(ctx.ui.dump()["path"]).read_text()
     cards = _find_result_cards(ctx, xml)

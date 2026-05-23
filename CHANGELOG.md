@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.2 — 2026-05-23
+
+### Bug fixes
+- **Search keyword silently replaced by trending-hint placeholder.** The XHS search EditText (`mSearchToolBarEt`) is now pre-filled with `text="搜索, "` and shows a rotating trending hint (e.g. `hint="石头P20 UP好价"`). `type_text` only appends, so when the IME broadcast didn't land on the focused field, pressing Enter let XHS submit the hint as the default query — a user reported searching "扫地机器人" but landing on "石头P20 UP好价" results. Fix: pre-swap to ADBKeyboard, focus the field, send `ADB_CLEAR_TEXT` broadcast, then `ADB_INPUT_TEXT`, then Enter. CJK keywords now use the same IME-pre-swap pattern as `comment`.
+- Home search affordance: added `com.xingin.xhs:id/search` (current button-variant) to the fallback chain alongside `iv_search` and the legacy `mSearchToolBarSearchBtn`. A/B variants of the home toolbar were rotating between these ids.
+
 ## 1.1.1 — 2026-05-23
 
 ### Bug fixes (Xiaohongshu selector drift, observed against the current production app)
