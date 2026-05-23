@@ -2,9 +2,9 @@
 
 Selectors per research/ui-trees/xiaohongshu/00-selectors.md.
 
-NOTE: v1 comment verb is DRY-RUN ONLY. Spec §6 lock: 个人号 not allowed to
-post via this library in v1. The verb writes into the compose box and locates
-the send button, then presses back. There is no --commit flag.
+Mutating verbs (`like`, `comment`) follow the standard --commit gate (mirrors
+douyin): default path is dry-run; `--commit` plus `EM_ALLOW_COMMIT=1` actually
+taps. Daily caps enforced via governor; text scanned by linter.
 """
 
 from __future__ import annotations
@@ -196,19 +196,68 @@ def back(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     return {"foreground": ctx.app.foreground()}
 
 
-# ----- comment (DRY-RUN ONLY) --------------------------------------------------
+# ----- like --------------------------------------------------------------------
+
+
+@app.verb("like", requires_commit_flag=True)
+def like(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """Like the current note detail.
+
+    Default = dry-run (locate like button, return coords).
+    With --commit (and EM_ALLOW_COMMIT=1 gated by cli), actually tap.
+    """
+    ctx.governor.check_or_raise("like")
+
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    like_btn = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/noteLikeLayout")
+    if like_btn is None:
+        raise EmError(
+            ErrorCode.ELEMENT_NOT_FOUND,
+            "XHS like button not visible",
+            hint="open a note detail first via `xiaohongshu open --rank N`",
+        )
+
+    before_desc = like_btn.get("content_desc", "")
+    before_already_liked = "已赞" in before_desc
+
+    if not getattr(args, "commit", False):
+        return {
+            "dry_run": True,
+            "committed": False,
+            "already_liked": before_already_liked,
+            "like_button_cx": like_btn["cx"],
+            "like_button_cy": like_btn["cy"],
+        }
+
+    ctx.input.tap_node(like_btn)
+    time.sleep(1.5)
+
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    after = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/noteLikeLayout")
+    after_already_liked = "已赞" in (after.get("content_desc", "") if after else "")
+    ctx.governor.record("like")
+    return {
+        "dry_run": False,
+        "committed": True,
+        "already_liked_before": before_already_liked,
+        "already_liked_after": after_already_liked,
+        "verified_changed": before_already_liked != after_already_liked,
+    }
+
+
+# ----- comment -----------------------------------------------------------------
 
 
 def _comment_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--text", required=True)
 
 
-@app.verb("comment", add_args=_comment_args)  # NO requires_commit_flag — v1 never sends
+@app.verb("comment", add_args=_comment_args, requires_commit_flag=True)
 def comment(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
-    """DRY-RUN ONLY in v1: open compose, type text, locate send button, then back.
+    """Comment on the current note detail.
 
-    The send button is never tapped. Per spec §6 lock: XHS account is personal,
-    not authorized to actually post via this library.
+    Default = dry-run (open compose, type text, locate send button, cancel).
+    With --commit (and EM_ALLOW_COMMIT=1 gated by cli), actually press send.
     """
     ctx.linter.check_or_raise(args.text)
     ctx.governor.check_or_raise("comment")
@@ -216,7 +265,6 @@ def comment(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     xml = Path(ctx.ui.dump()["path"]).read_text()
     compose = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/mContentET")
     if compose is None:
-        # Try opening compose via the bottom comment CTA
         cta = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/noteCommentLayout")
         if cta is not None:
             ctx.input.tap_node(cta)
@@ -237,13 +285,118 @@ def comment(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
 
     xml = Path(ctx.ui.dump()["path"]).read_text()
     send_btn = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/commentFuncBtnSend")
+    if send_btn is None:
+        raise EmError(
+            ErrorCode.ELEMENT_NOT_FOUND,
+            "send button did not appear",
+            hint="text may not have been entered; check IME with `doctor`",
+        )
 
-    # CRITICAL: never tap. Back out to keep account state clean.
-    ctx.input.keyevent("back")
+    if not getattr(args, "commit", False):
+        ctx.input.keyevent("back")
+        return {
+            "dry_run": True,
+            "committed": False,
+            "text": args.text,
+            "send_button_cx": send_btn["cx"],
+            "send_button_cy": send_btn["cy"],
+        }
+
+    ctx.input.tap_node(send_btn)
+    time.sleep(4)
+
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    verified = args.text in xml
+    ctx.governor.record("comment")
     return {
-        "dry_run": True,
+        "dry_run": False,
+        "committed": True,
+        "verified_visible": verified,
         "text": args.text,
-        "send_button_cx": send_btn["cx"] if send_btn else None,
-        "send_button_cy": send_btn["cy"] if send_btn else None,
-        "note": "v1 is dry-run only; send button was never tapped",
+    }
+
+
+# ----- engage (search → iterate → like / comment) ------------------------------
+
+
+def _on_results_page(ctx: ExecContext) -> bool:
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    return ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/searchNoteCard") is not None
+
+
+def _back_to_results(ctx: ExecContext, max_back: int = 4) -> bool:
+    for _ in range(max_back):
+        if _on_results_page(ctx):
+            return True
+        ctx.input.keyevent("back")
+        time.sleep(0.8)
+    return _on_results_page(ctx)
+
+
+def _engage_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--keyword", required=True)
+    p.add_argument("--limit", type=int, default=3, help="how many top results to engage with")
+    p.add_argument("--like", action="store_true", help="like each note")
+    p.add_argument("--comment-text", dest="comment_text", help="post this comment on each note")
+    p.add_argument("--sleep", type=float, default=2.0, help="seconds between iterations")
+
+
+@app.verb("engage", add_args=_engage_args, requires_commit_flag=True)
+def engage(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """Search a keyword, then iterate top results doing like / comment.
+
+    Pipeline per iteration: open → detail → (like) → (comment) → back-to-results.
+    Each mutating step honors --commit (passed through to the underlying verbs).
+    At least one of --like / --comment-text must be provided.
+    """
+    if not args.like and not args.comment_text:
+        raise EmError(
+            ErrorCode.UNKNOWN,
+            "engage requires at least one of --like or --comment-text",
+        )
+
+    if args.comment_text:
+        ctx.linter.check_or_raise(args.comment_text)
+
+    search_result = search(
+        argparse.Namespace(keyword=args.keyword, limit=args.limit),
+        ctx,
+    )
+    hits = search_result["results"]
+
+    iterations: list[dict[str, Any]] = []
+    for hit in hits:
+        rank = hit["index"]
+        item: dict[str, Any] = {"rank": rank}
+        try:
+            open_result(argparse.Namespace(rank=rank), ctx)
+            item["detail"] = detail(argparse.Namespace(), ctx)
+
+            if args.like:
+                item["like"] = like(
+                    argparse.Namespace(commit=getattr(args, "commit", False)),
+                    ctx,
+                )
+
+            if args.comment_text:
+                item["comment"] = comment(
+                    argparse.Namespace(
+                        text=args.comment_text,
+                        commit=getattr(args, "commit", False),
+                    ),
+                    ctx,
+                )
+        except EmError as e:
+            item["error"] = {"code": e.code.name, "message": str(e)}
+
+        item["recovered_to_results"] = _back_to_results(ctx)
+        iterations.append(item)
+        time.sleep(args.sleep)
+
+    return {
+        "keyword": args.keyword,
+        "limit": args.limit,
+        "did_like": args.like,
+        "did_comment": bool(args.comment_text),
+        "iterations": iterations,
     }

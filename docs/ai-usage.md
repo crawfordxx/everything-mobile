@@ -89,7 +89,7 @@ If `RATE_LIMITED` comes back, **stop the loop**. Do not switch accounts or rotat
 
 To actually send, you need **both** `--commit` and `EM_ALLOW_COMMIT=1`. Don't set those without explicit human authorization.
 
-`mobilecli xiaohongshu comment` has no `--commit` flag at all. v1 never sends on XHS.
+`mobilecli xiaohongshu comment` and `mobilecli xiaohongshu like` follow the same dual-gate (`--commit` + `EM_ALLOW_COMMIT=1`). `mobilecli xiaohongshu engage --keyword K [--like] [--comment-text T]` is a compound verb that searches and then iterates `open → detail → (like) → (comment) → back-to-results` on the top N hits; the same dual-gate applies. Daily caps are enforced per-iteration. Default = dry-run; do NOT pass `--commit` unless a human explicitly authorized this run.
 
 ## What you should never do
 

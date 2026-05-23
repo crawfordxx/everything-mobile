@@ -35,6 +35,7 @@ def test_builtin_app_verbs_present():
     for verb_name in ("launch", "search", "open", "detail", "comment"):
         assert verb_name in apps["douyin"].verbs, f"douyin missing {verb_name}"
         assert verb_name in apps["xiaohongshu"].verbs, f"xiaohongshu missing {verb_name}"
+    assert "like" in apps["xiaohongshu"].verbs, "xiaohongshu missing like"
 
 
 def test_douyin_comment_requires_commit_flag():
@@ -42,7 +43,18 @@ def test_douyin_comment_requires_commit_flag():
     assert apps["douyin"].verbs["comment"].requires_commit_flag is True
 
 
-def test_xiaohongshu_comment_does_not_require_commit_flag():
-    """v1 lock: XHS comment is dry-run only, no --commit path exists."""
+def test_xiaohongshu_comment_requires_commit_flag():
+    """§6 lock removed: XHS comment now follows standard --commit gate."""
     apps = load()
-    assert apps["xiaohongshu"].verbs["comment"].requires_commit_flag is False
+    assert apps["xiaohongshu"].verbs["comment"].requires_commit_flag is True
+
+
+def test_xiaohongshu_like_requires_commit_flag():
+    apps = load()
+    assert apps["xiaohongshu"].verbs["like"].requires_commit_flag is True
+
+
+def test_xiaohongshu_engage_present_and_gated():
+    apps = load()
+    assert "engage" in apps["xiaohongshu"].verbs
+    assert apps["xiaohongshu"].verbs["engage"].requires_commit_flag is True

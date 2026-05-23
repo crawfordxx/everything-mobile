@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.0 — 2026-05-23
+
+### Features
+- `mobilecli xiaohongshu like` — like the current note detail (dry-run by default; `--commit` + `EM_ALLOW_COMMIT=1` to actually tap). Daily cap = 100, enforced by `SessionGovernor`.
+- `mobilecli xiaohongshu comment` — now honors the standard `--commit` gate (previously dry-run-only).
+- `mobilecli xiaohongshu engage --keyword K [--limit N] [--like] [--comment-text T] [--sleep S] [--commit]` — compound verb that searches + iterates `open → detail → (like) → (comment) → back-to-results` on the top N hits. Each mutating step still respects `--commit` + governor + linter.
+
+### Behavior changes
+- Removed the spec §6 personal-account lock on Xiaohongshu mutating verbs. Safety now relies entirely on the same `--commit` + `EM_ALLOW_COMMIT=1` dual-gate that Douyin already uses, plus governor caps and content linting. README disclaimers updated accordingly.
+
+### Tests
+- Unit tests assert: XHS `comment.requires_commit_flag is True`, `like` verb present + gated, `engage` verb present + gated.
+
 ## 1.0.0 — 2026-05-21
 
 First public release.

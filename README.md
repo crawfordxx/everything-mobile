@@ -13,6 +13,8 @@ There is **no AI inside this library**. The intelligence lives in whatever tool 
 > **This project is for learning and security research only.** It is a generic Android automation library that demonstrates how AI agents can drive mobile apps. The maintainers do not endorse, recommend, or take responsibility for any use that violates the terms of service of any third-party platform (including but not limited to Douyin / 抖音, Xiaohongshu / 小红书, WeChat / 微信, TikTok). Users are solely responsible for their own actions, account safety, and compliance with applicable laws. Using this project to spam, harass, mass-message, fake engagement, or evade platform anti-abuse measures is **explicitly out of scope** and unsupported. By using this software you accept all risk including but not limited to account suspension, rate-limiting, shadowban, and permanent device-level platform restrictions.
 >
 > **本项目仅用于学习与安全研究。** 这是一个通用的 Android 自动化库，演示 AI 代理如何驱动移动 App。维护者不鼓励、不推荐、不为任何违反第三方平台（包括但不限于抖音、小红书、微信、TikTok）服务条款的使用行为负责。使用者须独立承担行为、账号安全与法律合规责任。使用本项目用于刷量、骚扰、群发、伪造互动、规避平台反作弊机制等行为，**明确不在本项目支持范围内**。使用本软件即代表接受所有风险，包括但不限于账号封禁、限流、限评、设备级封锁。
+>
+> **关于状态变更操作 / On state-mutating verbs.** Some verbs (`like`, `comment`, batch `engage`) can actually modify platform state when invoked with `--commit` plus the `EM_ALLOW_COMMIT=1` environment gate. This dual-gate is a *technical safety net*, not authorization — it forces the operator to make a deliberate, irreversible choice. Daily caps (governor) and content linting are enforced, but they exist to slow you down, not to make automated engagement safe or compliant. **Setting `EM_ALLOW_COMMIT=1` is your sole legal and ethical responsibility.** 这些动作（点赞 / 评论 / 批量 engage）需要 `--commit` + `EM_ALLOW_COMMIT=1` 双闸；开启即代表你独立承担一切平台与法律后果。
 
 ---
 
@@ -118,7 +120,9 @@ adb shell ime enable com.android.adbkeyboard/.AdbIME
 | `mobilecli xiaohongshu search --keyword K [--limit N]` | 搜索笔记 | 返回结果列表 |
 | `mobilecli xiaohongshu open --rank N` | 点开第 N 个结果 | |
 | `mobilecli xiaohongshu detail` | 抓笔记互动数据 | |
-| `mobilecli xiaohongshu comment --text T` | 在当前笔记下评论 | **v1 永远 dry-run，不真发**（无 `--commit` flag）|
+| `mobilecli xiaohongshu like [--commit]` | 给当前笔记点赞 | 默认 dry-run；`--commit` 需 `EM_ALLOW_COMMIT=1` |
+| `mobilecli xiaohongshu comment --text T [--commit]` | 在当前笔记下评论 | 默认 dry-run；`--commit` 需 `EM_ALLOW_COMMIT=1` |
+| `mobilecli xiaohongshu engage --keyword K [--limit N] [--like] [--comment-text T] [--sleep S] [--commit]` | 搜词 + 遍历 top N + 批量点赞/评论 | 复合 verb；默认 dry-run；强烈建议先无 `--commit` 试跑；用前请重读上方免责 |
 
 ### 全局 flag
 
