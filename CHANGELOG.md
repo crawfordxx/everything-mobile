@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.1 — 2026-05-23
+
+### Bug fixes (Xiaohongshu selector drift, observed against the current production app)
+- Home-screen search affordance: try `iv_search` first, fall back to legacy `mSearchToolBarSearchBtn`, then `content-desc="搜索"`.
+- Search input field: try `mSearchToolBarEt`, `et_search`, `search_edit`; final fallback finds the first `android.widget.EditText` on screen.
+- Search result cards: tried `searchNoteCard` (legacy), `resultNoteContainer` (current `GlobalSearchActivity`); same fallback applied to `open --rank` and to the engage recovery oracle.
+- Comment compose CTA: tap the bottom "说点什么..." bar (`inputCommentTV`) first, fall back to `noteCommentLayout`.
+- Comment IME flow: for CJK text, pre-swap to ADBKeyboard *before* opening the compose overlay and only restore at end of verb. Previously the mid-flow `restore_ime` dismissed compose before the send button could be located.
+- Engage recovery: bumped `_back_to_results` to 6 backs × 1.2 s. Each iteration now re-runs `search` from home if it lands stranded, so a single stuck overlay no longer wedges the rest of the run.
+
 ## 1.1.0 — 2026-05-23
 
 ### Features
