@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import argparse
 import re
+import shlex
 import time
 from pathlib import Path
 from typing import Any
 
+from mobilecli.core import ime as _ime
 from mobilecli.envelope import EmError, ErrorCode
 from mobilecli.plugin import App, ExecContext
 
@@ -35,6 +37,39 @@ app = App(
 
 # Home-state oracle (UI-tree research: home is IndexActivityV2).
 _HOME_ACTIVITY_SUFFIX = ".IndexActivityV2"
+
+
+_RESULT_CARD_IDS = (
+    "com.xingin.xhs:id/searchNoteCard",  # legacy
+    "com.xingin.xhs:id/resultNoteContainer",  # 2026+ GlobalSearchActivity
+)
+
+
+def _find_result_cards(ctx: ExecContext, xml: str) -> list[dict[str, Any]]:
+    """Return all search-result note cards on screen, trying known id variants."""
+    for rid in _RESULT_CARD_IDS:
+        cards = ctx.ui.find_all_by_resource_id(xml, rid)
+        if cards:
+            return cards
+    return []
+
+
+def _first_edittext(xml: str) -> dict[str, Any] | None:
+    """Find the first focusable EditText on the current screen (selector fallback)."""
+    m = re.search(
+        r'<node[^>]*class="android\.widget\.EditText"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"[^>]*/?>',
+        xml,
+    )
+    if m is None:
+        return None
+    x1, y1, x2, y2 = (int(g) for g in m.groups())
+    return {
+        "bounds": f"[{x1},{y1}][{x2},{y2}]",
+        "cx": (x1 + x2) // 2,
+        "cy": (y1 + y2) // 2,
+        "text": "",
+        "content_desc": "",
+    }
 
 
 def _on_home(ctx: ExecContext) -> bool:
@@ -100,10 +135,14 @@ def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     time.sleep(1.0)
 
     xml = Path(ctx.ui.dump()["path"]).read_text()
-    search_node = ctx.ui.find_by_resource_id(
-        xml,
+    search_node = None
+    for rid in (
+        "com.xingin.xhs:id/iv_search",
         "com.xingin.xhs:id/mSearchToolBarSearchBtn",
-    )
+    ):
+        search_node = ctx.ui.find_by_resource_id(xml, rid)
+        if search_node is not None:
+            break
     if search_node is None:
         search_node = ctx.ui.find_by_content_desc(xml, "搜索")
     if search_node is None:
@@ -112,7 +151,17 @@ def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     time.sleep(2)
 
     xml = Path(ctx.ui.dump()["path"]).read_text()
-    inp = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/mSearchToolBarEt")
+    inp = None
+    for rid in (
+        "com.xingin.xhs:id/mSearchToolBarEt",
+        "com.xingin.xhs:id/et_search",
+        "com.xingin.xhs:id/search_edit",
+    ):
+        inp = ctx.ui.find_by_resource_id(xml, rid)
+        if inp is not None:
+            break
+    if inp is None:
+        inp = _first_edittext(xml)
     if inp is None:
         raise EmError(ErrorCode.ELEMENT_NOT_FOUND, "XHS search input not found")
     ctx.input.tap_node(inp)
@@ -123,7 +172,7 @@ def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     time.sleep(3)
 
     xml = Path(ctx.ui.dump()["path"]).read_text()
-    cards = ctx.ui.find_all_by_resource_id(xml, "com.xingin.xhs:id/searchNoteCard")
+    cards = _find_result_cards(ctx, xml)
     results = []
     for i, c in enumerate(cards[: args.limit], 1):
         results.append(
@@ -148,7 +197,7 @@ def _open_args(p: argparse.ArgumentParser) -> None:
 def open_result(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     """Tap the Nth search result note from the current results screen."""
     xml = Path(ctx.ui.dump()["path"]).read_text()
-    cards = ctx.ui.find_all_by_resource_id(xml, "com.xingin.xhs:id/searchNoteCard")
+    cards = _find_result_cards(ctx, xml)
     if args.rank < 1 or args.rank > len(cards):
         raise EmError(
             ErrorCode.ELEMENT_NOT_FOUND,
@@ -262,58 +311,85 @@ def comment(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     ctx.linter.check_or_raise(args.text)
     ctx.governor.check_or_raise("comment")
 
-    xml = Path(ctx.ui.dump()["path"]).read_text()
-    compose = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/mContentET")
-    if compose is None:
-        cta = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/noteCommentLayout")
-        if cta is not None:
-            ctx.input.tap_node(cta)
-            time.sleep(1.5)
-            xml = Path(ctx.ui.dump()["path"]).read_text()
-            compose = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/mContentET")
-    if compose is None:
-        raise EmError(
-            ErrorCode.ELEMENT_NOT_FOUND,
-            "XHS comment compose not visible",
-            hint="open a note detail first via `xiaohongshu open --rank N`",
-        )
+    # IME handling: type_text_humanized's CJK path swaps to ADBKeyboard then
+    # restores the original IME — that restore drops focus and dismisses the
+    # compose overlay before we can locate the send button. So for CJK text we
+    # pre-swap ADBKeyboard BEFORE opening compose (a soft-input window change
+    # while compose is open also dismisses it) and only restore at the very end.
+    needs_cjk = not args.text.isascii()
+    prev_ime = _ime.current_ime(ctx.device) if needs_cjk else None
+    if needs_cjk:
+        _ime.set_adbkeyboard(ctx.device)
+        time.sleep(0.6)
 
-    ctx.input.tap_node(compose)
-    time.sleep(1)
-    ctx.input.type_text(args.text)
-    time.sleep(1.5)
+    try:
+        xml = Path(ctx.ui.dump()["path"]).read_text()
+        compose = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/mContentET")
+        if compose is None:
+            # New XHS detail page: tap the bottom "说点什么..." bar (inputCommentTV)
+            # to open compose. Older builds used noteCommentLayout.
+            cta = None
+            for rid in (
+                "com.xingin.xhs:id/inputCommentTV",
+                "com.xingin.xhs:id/noteCommentLayout",
+            ):
+                cta = ctx.ui.find_by_resource_id(xml, rid)
+                if cta is not None:
+                    break
+            if cta is not None:
+                ctx.input.tap_node(cta)
+                time.sleep(1.5)
+                xml = Path(ctx.ui.dump()["path"]).read_text()
+                compose = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/mContentET")
+        if compose is None:
+            raise EmError(
+                ErrorCode.ELEMENT_NOT_FOUND,
+                "XHS comment compose not visible",
+                hint="open a note detail first via `xiaohongshu open --rank N`",
+            )
 
-    xml = Path(ctx.ui.dump()["path"]).read_text()
-    send_btn = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/commentFuncBtnSend")
-    if send_btn is None:
-        raise EmError(
-            ErrorCode.ELEMENT_NOT_FOUND,
-            "send button did not appear",
-            hint="text may not have been entered; check IME with `doctor`",
-        )
+        ctx.input.tap_node(compose)
+        time.sleep(1)
+        if needs_cjk:
+            ctx.device.shell(f"am broadcast -a ADB_INPUT_TEXT --es msg {shlex.quote(args.text)}")
+        else:
+            ctx.input.type_text(args.text)
+        time.sleep(1.5)
 
-    if not getattr(args, "commit", False):
-        ctx.input.keyevent("back")
+        xml = Path(ctx.ui.dump()["path"]).read_text()
+        send_btn = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/commentFuncBtnSend")
+        if send_btn is None:
+            raise EmError(
+                ErrorCode.ELEMENT_NOT_FOUND,
+                "send button did not appear",
+                hint="text may not have been entered; check IME with `doctor`",
+            )
+
+        if not getattr(args, "commit", False):
+            ctx.input.keyevent("back")
+            return {
+                "dry_run": True,
+                "committed": False,
+                "text": args.text,
+                "send_button_cx": send_btn["cx"],
+                "send_button_cy": send_btn["cy"],
+            }
+
+        ctx.input.tap_node(send_btn)
+        time.sleep(4)
+
+        xml = Path(ctx.ui.dump()["path"]).read_text()
+        verified = args.text in xml
+        ctx.governor.record("comment")
         return {
-            "dry_run": True,
-            "committed": False,
+            "dry_run": False,
+            "committed": True,
+            "verified_visible": verified,
             "text": args.text,
-            "send_button_cx": send_btn["cx"],
-            "send_button_cy": send_btn["cy"],
         }
-
-    ctx.input.tap_node(send_btn)
-    time.sleep(4)
-
-    xml = Path(ctx.ui.dump()["path"]).read_text()
-    verified = args.text in xml
-    ctx.governor.record("comment")
-    return {
-        "dry_run": False,
-        "committed": True,
-        "verified_visible": verified,
-        "text": args.text,
-    }
+    finally:
+        if needs_cjk and prev_ime:
+            _ime.restore_ime(ctx.device, prev_ime)
 
 
 # ----- engage (search → iterate → like / comment) ------------------------------
@@ -321,15 +397,15 @@ def comment(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
 
 def _on_results_page(ctx: ExecContext) -> bool:
     xml = Path(ctx.ui.dump()["path"]).read_text()
-    return ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/searchNoteCard") is not None
+    return bool(_find_result_cards(ctx, xml))
 
 
-def _back_to_results(ctx: ExecContext, max_back: int = 4) -> bool:
+def _back_to_results(ctx: ExecContext, max_back: int = 6) -> bool:
     for _ in range(max_back):
         if _on_results_page(ctx):
             return True
         ctx.input.keyevent("back")
-        time.sleep(0.8)
+        time.sleep(1.2)
     return _on_results_page(ctx)
 
 
@@ -366,6 +442,15 @@ def engage(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
 
     iterations: list[dict[str, Any]] = []
     for hit in hits:
+        # Before each iteration: ensure we're on the results page. If a prior
+        # iteration left us stranded (compose overlay, sub-page), re-run search
+        # from home to get a clean state.
+        if not _on_results_page(ctx):
+            search(
+                argparse.Namespace(keyword=args.keyword, limit=args.limit),
+                ctx,
+            )
+
         rank = hit["index"]
         item: dict[str, Any] = {"rank": rank}
         try:
