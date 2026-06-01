@@ -7,6 +7,7 @@ the humanized variants are the default Layer 2 surface.
 
 from __future__ import annotations
 
+import os
 import random
 import shlex
 import time
@@ -71,16 +72,26 @@ def _screen_wh(device: Device) -> tuple[int, int]:
 
 
 def swipe_humanized(device: Device, start, end) -> dict[str, Any]:
-    """Humanized swipe: sendevent 连续曲线(0.8~2.0s),探测失败回退直线 input swipe。"""
-    from mobilecli.core import touch as _touch
+    """Humanized swipe.
 
+    Default: straight `input swipe` with randomized 0.8~2.0s duration + ±4px
+    endpoint jitter (works on all devices, beats the old fixed 0.6~1.2s line).
+
+    Opt-in `EM_CURVED_SWIPE=1`: try a continuous bezier gesture via sendevent
+    (needs a touch device writable from `adb shell` -- effectively rooted
+    devices; on non-root Android `sendevent /dev/input/*` is Permission denied).
+    Any failure falls back to the straight line below, so it never degrades.
+    """
     pts = _hz.bezier_swipe_points(start, end, n_points=24)
     dur = _hz.swipe_duration_s()
-    info = _touch.probe_touch_device(device)
-    if info is not None:
-        res = _touch.curved_swipe(device, pts, dur, _screen_wh(device), info)
-        if res is not None:
-            return {"mode": "curved", **res}
+    if os.environ.get("EM_CURVED_SWIPE") == "1":
+        from mobilecli.core import touch as _touch
+
+        info = _touch.probe_touch_device(device)
+        if info is not None:
+            res = _touch.curved_swipe(device, pts, dur, _screen_wh(device), info)
+            if res is not None:
+                return {"mode": "curved", **res}
     sx, sy = _hz.jittered_xy(start[0], start[1], radius=4)
     ex, ey = _hz.jittered_xy(end[0], end[1], radius=4)
     device.shell(f"input swipe {sx} {sy} {ex} {ey} {int(dur * 1000)}")
