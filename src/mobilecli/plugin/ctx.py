@@ -13,6 +13,7 @@ from typing import Any
 from mobilecli.adb.device import Device
 from mobilecli.core import app as core_app
 from mobilecli.core import input as core_input
+from mobilecli.core import media as core_media
 from mobilecli.core import screenshot as core_screenshot
 from mobilecli.core import ui as core_ui
 from mobilecli.safety.governor import SessionGovernor
@@ -72,6 +73,16 @@ class UiModule:
 
 
 @dataclass
+class MediaModule:
+    device: Device
+
+    def push_to_gallery(
+        self, local_paths: list[str], subdir: str = "em-publish"
+    ) -> dict[str, Any]:
+        return core_media.push_to_gallery(self.device, local_paths, subdir)
+
+
+@dataclass
 class AppModule:
     device: Device
     package: str
@@ -99,6 +110,7 @@ class ExecContext:
     input: InputModule
     ui: UiModule
     app: AppModule
+    media: MediaModule
     governor: SessionGovernor
     linter: ContentLinter
 
@@ -116,6 +128,7 @@ class ExecContext:
             input=InputModule(device=device),
             ui=UiModule(device=device),
             app=AppModule(device=device, package=package),
+            media=MediaModule(device=device),
             governor=SessionGovernor(account=account, caps=caps),
             linter=ContentLinter(extra_patterns=extra_lint),
         )
