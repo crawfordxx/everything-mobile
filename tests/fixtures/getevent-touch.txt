@@ -1,0 +1,30 @@
+add device 1: /dev/input/event2
+  name:     "cs40l26_input"
+  events:
+    FF  (0015): FF_PERIODIC           FF_SINE               FF_CUSTOM             FF_GAIN              
+  input props:
+    <none>
+add device 2: /dev/input/event1
+  name:     "synaptics_tcm_touch"
+  events:
+    KEY (0001): KEY_WAKEUP            BTN_TOOL_FINGER       BTN_TOUCH            
+    ABS (0003): ABS_X                 : value 0, min 0, max 12799, fuzz 0, flat 0, resolution 0
+                ABS_Y                 : value 0, min 0, max 28559, fuzz 0, flat 0, resolution 0
+                ABS_PRESSURE          : value 0, min 0, max 255, fuzz 0, flat 0, resolution 0
+                ABS_MT_SLOT           : value 0, min 0, max 9, fuzz 0, flat 0, resolution 0
+                ABS_MT_TOUCH_MAJOR    : value 0, min 0, max 28559, fuzz 0, flat 0, resolution 0
+                ABS_MT_TOUCH_MINOR    : value 0, min 0, max 12799, fuzz 0, flat 0, resolution 0
+                ABS_MT_ORIENTATION    : value 0, min -4096, max 4096, fuzz 0, flat 0, resolution 0
+                ABS_MT_POSITION_X     : value 0, min 0, max 12799, fuzz 0, flat 0, resolution 0
+                ABS_MT_POSITION_Y     : value 0, min 0, max 28559, fuzz 0, flat 0, resolution 0
+                ABS_MT_TOOL_TYPE      : value 0, min 0, max 2, fuzz 0, flat 0, resolution 0
+                ABS_MT_TRACKING_ID    : value 0, min 0, max 65535, fuzz 0, flat 0, resolution 0
+                ABS_MT_PRESSURE       : value 0, min 0, max 255, fuzz 0, flat 0, resolution 0
+  input props:
+    INPUT_PROP_DIRECT
+add device 3: /dev/input/event0
+  name:     "gpio_keys"
+  events:
+    KEY (0001): KEY_VOLUMEDOWN        KEY_VOLUMEUP          KEY_POWER            
+  input props:
+    <none>
