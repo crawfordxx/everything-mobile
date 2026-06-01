@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from mobilecli.apps._comments import CommentRow, select_comment
+from mobilecli.core.ui import find_all_by_resource_id
 from mobilecli.envelope import EmError, ErrorCode
 from mobilecli.plugin import App, ExecContext
 
@@ -192,6 +194,39 @@ def back(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     ctx.input.keyevent("back")
     time.sleep(0.6)
     return {"foreground": ctx.app.foreground()}
+
+
+# ----- comments (shared parse for reply) ----------------------------------------
+
+_FCO_ID = "com.ss.android.ugc.aweme:id/fco"
+_XDH_ID = "com.ss.android.ugc.aweme:id/xdh"
+
+
+def _bounds_contains(outer: list[int] | None, cx: int, cy: int) -> bool:
+    if not outer:
+        return False
+    return outer[0] <= cx <= outer[2] and outer[1] <= cy <= outer[3]
+
+
+def _parse_comment_rows(xml: str) -> list[CommentRow]:
+    """Parse top-level comment rows from the comments overlay.
+
+    Each top-level comment is an `fco` FrameLayout whose content-desc is the
+    whole comment string; its 回复 button is an `xdh` inside it. Anchor on xdh
+    (guarantees a tappable target) and pair to the enclosing fco for text.
+    Partially-scrolled last rows have an fco but no xdh -> naturally dropped.
+    """
+    fcos = find_all_by_resource_id(xml, _FCO_ID)
+    xdhs = find_all_by_resource_id(xml, _XDH_ID)
+    rows: list[CommentRow] = []
+    for xdh in xdhs:
+        container = next(
+            (f for f in fcos if _bounds_contains(f["bounds"], xdh["cx"], xdh["cy"])),
+            None,
+        )
+        text = container["content_desc"] if container else ""
+        rows.append(CommentRow(index=len(rows) + 1, text=text, reply_node=xdh))
+    return rows
 
 
 # ----- comment -----------------------------------------------------------------
