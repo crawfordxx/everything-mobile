@@ -53,6 +53,20 @@ _ABS_MT_POSITION_X, _ABS_MT_POSITION_Y = 53, 54
 _TRACKING_ID = 4242
 
 
+def _sendevent_permitted(device: Device, node: str) -> bool:
+    """一次性廉价探测:发单条无副作用的 SYN_REPORT sendevent。
+
+    非 root Android 写 /dev/input 会 "Permission denied"(非零退出)→ False,
+    且**立即**返回(不含任何 sleep),让调用方在构造含大量 sleep 的完整手势链
+    之前就快速回退,避免白跑一整串注定失败的 sleep。
+    """
+    try:
+        device.shell(f"sendevent {node} {_EV_SYN} {_SYN_REPORT} 0", timeout_s=5)
+    except Exception:  # noqa: BLE001
+        return False
+    return True
+
+
 def curved_swipe(
     device: Device,
     points: list[tuple[int, int]],
@@ -65,6 +79,9 @@ def curved_swipe(
     if not touch_info or len(points) < 2:
         return None
     node = touch_info["event_node"]
+    if not _sendevent_permitted(device, node):
+        # 非 root 设备无法写 /dev/input;快速回退直线(不白跑整串 sleep)。
+        return None
     xmax, ymax = touch_info["x_max"], touch_info["y_max"]
     sw, sh = screen_wh
 
@@ -103,5 +120,11 @@ def curved_swipe(
         se(_EV_SYN, _SYN_REPORT, 0),
     ]
     cmd = "; ".join(parts)
-    device.shell(cmd, timeout_s=max(10, int(duration_s) + 8))
+    try:
+        device.shell(cmd, timeout_s=max(10, int(duration_s) + 8))
+    except Exception:  # noqa: BLE001
+        # sendevent on /dev/input often needs root (Permission denied on
+        # non-rooted Android). Return None so the caller falls back to
+        # `input swipe` (straight, but still humanized duration + jitter).
+        return None
     return {"event_node": node, "points": len(points), "duration_s": duration_s}
