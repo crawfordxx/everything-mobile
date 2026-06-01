@@ -51,7 +51,9 @@ def push_to_gallery(
             f"-d {shlex.quote(scan_uri)}"
         )
         coll = "video" if not _is_image(local) else "images"
-        where = shlex.quote(f"_data='{remote}'")
+        # MediaStore stores _data as /storage/emulated/0/... but `remote` uses the
+        # /sdcard/... symlink — exact match would miss. Match on the dir/name tail.
+        where = shlex.quote(f"_data LIKE '%/{subdir}/{name}'")
         q = device.shell(
             f"content query --uri content://media/external/{coll}/media "
             f"--projection _id --where {where}"

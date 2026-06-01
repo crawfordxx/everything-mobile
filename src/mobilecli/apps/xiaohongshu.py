@@ -815,7 +815,7 @@ _PUB = {
     "post_entry": (540, 2288),          # id/index_post
     "album_from_gallery": (540, 1775),  # 面板 id/rlFirst 从相册选择
     "go_next": "com.xingin.xhs:id/bottomGoNext",        # 选完下一步
-    "video_edit_next": "com.xingin.xhs:id/capa_light_edit_next",
+    "edit_next": "com.xingin.xhs:id/capa_light_edit_next",
     "title": "com.xingin.xhs:id/editTitle",
     "body": "com.xingin.xhs:id/postNoteEditContentView",
     "add_topic": "com.xingin.xhs:id/addTopicView",
@@ -1031,15 +1031,16 @@ def publish(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     _select_pushed_media(ctx, count=len(media))
     steps.append(f"selected {len(media)} item(s)")
 
-    # 5. 视频专属:编辑页 -> 下一步
-    if media_type == "video":
-        xml = Path(ctx.ui.dump()["path"]).read_text()
-        nxt = ctx.ui.find_by_resource_id(xml, _PUB["video_edit_next"])
-        if nxt is None:
-            raise EmError(ErrorCode.ELEMENT_NOT_FOUND, "video edit 下一步 not found")
-        ctx.input.tap_node(nxt)
+    # 5. 编辑页(图文/视频选完都进一道编辑页 ImageEditActivity3/VideoEditActivityV3)
+    #    -> 下一步到发布编辑页。两者「下一步」同 id capa_light_edit_next。
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    edit_next = ctx.ui.find_by_resource_id(xml, _PUB["edit_next"])
+    if edit_next is not None:
+        ctx.input.tap_node(edit_next)
         time.sleep(3)
-        steps.append("passed video edit")
+        steps.append("passed edit page")
+    elif media_type == "video":
+        raise EmError(ErrorCode.ELEMENT_NOT_FOUND, "video edit 下一步 not found")
 
     # 6. 编辑页:取消位置弹窗
     xml = Path(ctx.ui.dump()["path"]).read_text()
