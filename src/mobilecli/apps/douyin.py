@@ -196,6 +196,54 @@ def back(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     return {"foreground": ctx.app.foreground()}
 
 
+# ----- like ---------------------------------------------------------------------
+
+
+@app.verb("like", requires_commit_flag=True)
+def like(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """Like the current video detail.
+
+    Default = dry-run (locate like button, return coords).
+    With --commit (and EM_ALLOW_COMMIT=1 gated by cli), actually tap.
+    """
+    ctx.governor.check_or_raise("like")
+
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    like_btn = ctx.ui.find_by_resource_id(xml, "com.ss.android.ugc.aweme:id/gl1")
+    if like_btn is None:
+        raise EmError(
+            ErrorCode.ELEMENT_NOT_FOUND,
+            "Douyin like button not visible",
+            hint="open a video detail first via `douyin open --rank N`",
+        )
+
+    before_liked = "已点赞" in like_btn.get("content_desc", "")
+
+    if not getattr(args, "commit", False):
+        return {
+            "dry_run": True,
+            "committed": False,
+            "already_liked": before_liked,
+            "like_button_cx": like_btn["cx"],
+            "like_button_cy": like_btn["cy"],
+        }
+
+    ctx.input.tap_node(like_btn)
+    time.sleep(1.5)
+
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    after = ctx.ui.find_by_resource_id(xml, "com.ss.android.ugc.aweme:id/gl1")
+    after_liked = "已点赞" in (after.get("content_desc", "") if after else "")
+    ctx.governor.record("like")
+    return {
+        "dry_run": False,
+        "committed": True,
+        "already_liked_before": before_liked,
+        "already_liked_after": after_liked,
+        "verified_changed": before_liked != after_liked,
+    }
+
+
 # ----- comments (shared parse for reply) ----------------------------------------
 
 _FCO_ID = "com.ss.android.ugc.aweme:id/fco"
