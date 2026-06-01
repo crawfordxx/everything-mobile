@@ -78,6 +78,28 @@ def find_all_by_resource_id(xml: str, resource_id: str) -> list[dict[str, Any]]:
     ]
 
 
+def find_by_content_desc_contains(xml: str, *needles: str) -> dict[str, Any] | None:
+    """First node whose content-desc contains ALL of `needles`.
+
+    Stable across layout variants where resource-ids differ but the
+    Chinese accessibility string is consistent (e.g. Douyin video vs photo
+    detail both use "未点赞，喜欢N，按钮" / "评论N，按钮").
+    """
+    for node in _iter_nodes(xml):
+        cd = node.get("content-desc", "")
+        if cd and all(n in cd for n in needles):
+            return _node_to_dict(node)
+    return None
+
+
+def find_first_by_class(xml: str, class_substr: str) -> dict[str, Any] | None:
+    """First node whose class contains `class_substr` (e.g. 'EditText')."""
+    for node in _iter_nodes(xml):
+        if class_substr in node.get("class", ""):
+            return _node_to_dict(node)
+    return None
+
+
 def dump(
     device: Device,
     output_path: str | None = None,
