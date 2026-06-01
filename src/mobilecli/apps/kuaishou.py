@@ -270,6 +270,7 @@ def open_result(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     ctx.input.tap_node(cards[args.rank - 1])
     time.sleep(3)
     _disable_animations(ctx)
+    ctx.input.idle_browse()
     return {"rank": args.rank, "foreground": ctx.app.foreground()}
 
 
@@ -281,6 +282,7 @@ def detail(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     """Read like / comment counts from the current video detail."""
     _disable_animations(ctx)
     xml = Path(ctx.ui.dump()["path"]).read_text()
+    ctx.input.reading_pause()
     return {
         "likes": _digits(ctx.ui.find_by_resource_id(xml, _LIKE_BTN)),
         "comments": _digits(ctx.ui.find_by_resource_id(xml, _COMMENT_BTN)),

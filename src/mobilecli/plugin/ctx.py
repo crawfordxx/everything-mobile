@@ -8,6 +8,7 @@ governor + linter unbypassable from plugin code.
 from __future__ import annotations
 
 import os
+import random
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -45,6 +46,19 @@ class InputModule:
             self._first = False
             return
         time.sleep(_hz.pace_delay_s(*_pace_bounds()))
+
+    def reading_pause(self, text_length: int = 200) -> None:
+        """模拟阅读停顿(浏览类 verb 读完内容后调)。"""
+        if _pace_enabled():
+            time.sleep(_hz.read_pause_s(text_length=text_length))
+
+    def idle_browse(self, prob: float = 0.4) -> None:
+        """偶发(prob 概率)小幅来回滑动模拟看内容。"""
+        if not _pace_enabled() or random.random() > prob:
+            return
+        sh = 2410
+        start, end = _hz.micro_wobble_swipe(center_y=sh // 2, screen_h=sh)
+        self.swipe(start, end)
 
     def tap_node(self, node: dict[str, Any]) -> dict[str, Any]:
         self._pace()
