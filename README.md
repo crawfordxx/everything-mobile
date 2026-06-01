@@ -145,14 +145,27 @@ adb shell ime enable com.android.adbkeyboard/.AdbIME
 
 - **时序方差**：`tap` 触屏时长 log-normal(μ=90ms, σ=0.5)，不是 `input tap` 那种 duration=0 的指纹
 - **坐标抖动**：`tap_humanized` 在元素 bounds 内框 60% 区域随机采样；按坐标点的话 ±8 px 抖动
-- **滑动**：bezier 端点 ±4 px + 时长 [600,1200] ms 随机化
+- **滑动**：默认人类化直线（端点 ±4 px + 时长 [0.8, 2.0] s 随机），任何机型都可用；置 `EM_CURVED_SWIPE=1` 可改用沿 bezier 轨迹的 sendevent 连续曲线（需可写 `/dev/input` 的 root 设备，否则**自动快速回退**到直线，永不退化）
 - **打字**：ASCII 每字符 log-normal(μ=120ms, σ=0.6) 间隔
+- **操作间延迟（pacing）**：`ctx.input.*` 每个动作前插一次截断高斯延迟（默认 [2, 10] s，均值 6、σ=2），同一序列首个动作不等。慢=像人；可调可关（见下表）
+- **阅读行为**：浏览类 verb（`open`/`detail` 等）读取后会随机「阅读停顿」，并偶发小幅来回滑动模拟看内容；填表流程（`publish`）不加
 - **`SessionGovernor`**：每个 `--account` 的每日动作计数持久化到 `~/.everything-mobile/sessions/<account>.json`；超 cap → `RATE_LIMITED` envelope
 - **`ContentLinter`**：自动拦截「加微信 / VX / 扫码 / 戳我 / 11 位手机号 / QQ / wx-id」等明显引流文案 → `CONTENT_BANNED` envelope
 
+### 风控环境变量
+
+| 环境变量 | 默认 | 含义 |
+|---|---|---|
+| `EM_PACE` | 开 | 设 `0` 关闭操作间高斯延迟（调试 / 批量跑得快时用） |
+| `EM_PACE_MIN` | `2` | pacing 延迟下界（秒） |
+| `EM_PACE_MAX` | `10` | pacing 延迟上界（秒） |
+| `EM_CURVED_SWIPE` | 关 | 设 `1` 启用 sendevent 连续曲线滑动（仅 root 设备生效，否则快速回退直线） |
+
+> ⚠️ **publish 会变慢**：默认 pacing 下，`publish` 有 ~15+ 个输入动作，单条发布可能多花 30–150 s（这是风控正向的）。营销 / 批量调用方可按需调小 `EM_PACE_MIN/MAX` 或用 `EM_PACE=0`。
+
 完整时序参数、风控研究与平台 cap 表见 [`docs/anti-risk-control.md`](docs/anti-risk-control.md)。
 
-**这一层不能关。** `--raw` 仅为调试存在，需 `EM_ALLOW_RAW=1` 环境变量，且会在 stderr 警告。
+**这一层不能关。** `--raw` 仅为调试存在，需 `EM_ALLOW_RAW=1` 环境变量，且会在 stderr 警告。`EM_PACE=0` 只关「额外的拟人停顿」，tap/swipe/type 本身的方差与抖动始终在。
 
 ---
 

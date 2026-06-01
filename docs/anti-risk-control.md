@@ -40,6 +40,26 @@
 
 ---
 
+## 实现状态(mobilecli,2026-06-01)
+
+本文档多数「Recommended impl」已接入 Layer 2 / Layer 2.5,所有 plugin 经 `ctx.input.*` 自动受益。
+
+| 本文建议 | 状态 | 落地位置 / 开关 |
+|---|---|---|
+| 触屏时长 log-normal(非 duration=0) | ✅ 已接入 | `safety/humanize.log_normal_duration_ms` → `core/input.tap_humanized` |
+| Tap 60% 内框抖动 + 高斯偏移 | ✅ 已接入 | `humanize.jittered_tap_point` / `jittered_xy` |
+| 操作间 log-normal/高斯延迟(read-time + inter-action) | ✅ 已接入 | `humanize.pace_delay_s` → `plugin/ctx.InputModule._pace`,默认 [2,10]s;`EM_PACE=0` 关、`EM_PACE_MIN/MAX` 调 |
+| Read pause(新屏读后再动) | ✅ 已接入(浏览类 verb) | `humanize.read_pause_s` → `InputModule.reading_pause`,`open`/`detail` 调用 |
+| 偶发小幅来回滑动(模拟看内容) | ✅ 已接入 | `InputModule.idle_browse` |
+| 滑动非直线(bezier 轨迹) | ⚠️ 默认人类化直线(0.8~2.0s+端点抖动);连续曲线为 opt-in | `core/touch.curved_swipe`(sendevent),`EM_CURVED_SWIPE=1` 启用,**仅 root 设备**,否则快速回退直线 |
+| 每账号每日 cap | ✅ 已接入 | `SessionGovernor`(`~/.everything-mobile/sessions/<account>.json`) |
+| 引流文案拦截 | ✅ 已接入 | `ContentLinter` → `CONTENT_BANNED` |
+| circadian/时段限制、session 时长冷却 | ❌ 未接入(YAGNI,单用户单设备暂不强制) | — |
+
+> 曲线滑动现实约束:本项目主力设备(Pixel 10 Pro,非 root)`adb shell sendevent /dev/input/*` 为 Permission denied,故曲线默认关、自动回退直线;直线已带 0.8~2.0s 随机时长+端点抖动,远好于旧的固定直线。`EM_CURVED_SWIPE=1` 仅在可写 `/dev/input` 的 root 设备上真正生效。
+
+---
+
 ## TL;DR — the 5 things that matter most
 
 1. **Timing variance > timing magnitude.** A 1.2-second delay that varies
