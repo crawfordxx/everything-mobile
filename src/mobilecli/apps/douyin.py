@@ -13,7 +13,9 @@ from mobilecli.apps._comments import CommentRow, select_comment
 from mobilecli.core import ime as _ime
 from mobilecli.core.ui import (
     find_all_by_resource_id,
+    find_by_content_desc,
     find_by_content_desc_contains,
+    find_by_resource_id,
     find_first_by_class,
 )
 from mobilecli.envelope import EmError, ErrorCode
@@ -66,6 +68,51 @@ def _ensure_home(ctx: ExecContext, max_back: int = 5) -> dict[str, Any]:
         ctx.app.launch()
         time.sleep(3.5)
     return ctx.app.foreground()
+
+
+_DY_NUM_RE = re.compile(r"(\d+(?:\.\d+)?)\s*([万亿]?)")
+
+
+def _to_int(s: str) -> int:
+    """'3046'->3046; '1.2万'->12000; '抖音号' 等非数字 -> 0。"""
+    m = _DY_NUM_RE.search(s or "")
+    if not m:
+        return 0
+    val = float(m.group(1))
+    unit = m.group(2)
+    if unit == "万":
+        val *= 10_000
+    elif unit == "亿":
+        val *= 100_000_000
+    return int(val)
+
+
+def _parse_douyin_profile(xml: str) -> dict[str, Any]:
+    """Parse Douyin 我 tab. logged_in oracle = 用户头像 / 昵称 present."""
+    PFX = "com.ss.android.ugc.aweme:id/"
+    avatar = find_by_content_desc(xml, "用户头像")
+    nick = find_by_resource_id(xml, PFX + "tdp")
+    if avatar is None and nick is None:
+        return {"logged_in": False}
+
+    did = find_by_resource_id(xml, PFX + "5no")
+    likes = find_by_resource_id(xml, PFX + "5yp")
+    following = find_by_resource_id(xml, PFX + "5yw")
+    fans = find_by_resource_id(xml, PFX + "5yi")
+
+    def _txt(node: dict[str, Any] | None) -> str:
+        return (node.get("text") or "").strip() if node else ""
+
+    did_txt = _txt(did).replace("抖音号：", "").replace("抖音号:", "").strip()
+    return {
+        "logged_in": True,
+        "nickname": _txt(nick),
+        "douyin_id": did_txt,
+        "following_count": _to_int(_txt(following)),
+        "fans_count": _to_int(_txt(fans)),
+        "likes_count": _to_int(_txt(likes)),
+        "avatar_bounds": tuple(avatar["bounds"]) if avatar else None,
+    }
 
 
 # ----- launch ------------------------------------------------------------------
@@ -452,3 +499,31 @@ def reply(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     finally:
         if needs_cjk and prev_ime:
             _ime.restore_ime(ctx.device, prev_ime)
+
+
+# ----- profile -----------------------------------------------------------------
+
+
+_ME_TAB_XY = (972, 2282)  # 抖音底部导航 "我" (id/0r4)
+
+
+def _profile_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--avatar-out", default=None, help="头像 PNG 落盘路径")
+
+
+@app.verb("profile", add_args=_profile_args)
+def profile(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """读取抖音登录态;已登录则返回头像(裁剪PNG)/昵称/抖音号/关注·粉丝·获赞数。"""
+    _ensure_home(ctx)
+    ctx.input.tap_xy(*_ME_TAB_XY)
+    time.sleep(2.5)
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    info = _parse_douyin_profile(xml)
+    if not info.get("logged_in"):
+        return {"logged_in": False}
+    bounds = info.pop("avatar_bounds", None)
+    if bounds is not None:
+        info["avatar"] = ctx.ui.screenshot_region(bounds, args.avatar_out)["path"]
+    else:
+        info["avatar"] = None
+    return info
