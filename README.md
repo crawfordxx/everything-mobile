@@ -6,6 +6,8 @@
 
 There is **no AI inside this library**. The intelligence lives in whatever tool is invoking `mobilecli`.
 
+<p align="center"><img src="docs/images/arch-01-architecture.png" alt="everything-mobile 架构：AI 智能体 → mobilecli（JSON 进出·无状态）→ adb → 安卓真机；分层 设备/输入原语/人类化风控/App 插件" width="860"></p>
+
 ---
 
 ## ⚠️ Disclaimer / 免责声明
@@ -110,6 +112,8 @@ adb shell ime enable com.android.adbkeyboard/.AdbIME
 
 ### App 子命令（Layer 3）
 
+<p align="center"><img src="docs/images/arch-03-verbs.png" alt="三端统一命令：抖音/快手/小红书 共用 9 个动作（启动/搜索/打开/详情/返回/点赞/评论/回复/主页），小红书专属 发布/批量互动" width="820"></p>
+
 `douyin` / `kuaishou` / `xiaohongshu` **共用同一套 9 个核心 verb**（下表把 `<app>` 换成具体 app 名）；小红书另有 `engage` / `publish` 两个。
 
 | 命令 | 用途 | 备注 |
@@ -147,6 +151,8 @@ adb shell ime enable com.android.adbkeyboard/.AdbIME
 ---
 
 ## 人类化与风控约束（Layer 2.5）
+
+<p align="center"><img src="docs/images/arch-02-fengkong.png" alt="人类化与风控 Layer 2.5：操作间延迟(高斯2~10秒)、拟人滑动(曲线+抖动)、阅读停顿、每日上限(Governor)、文案拦截" width="820"></p>
 
 `mobilecli` 默认就给所有 `tap` / `swipe` / `type` 加上：
 
