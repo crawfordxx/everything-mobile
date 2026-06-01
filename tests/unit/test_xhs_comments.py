@@ -22,9 +22,9 @@ def test_parses_only_toplevel_rows():
 
 def test_row_text_is_tv_content():
     rows = _parse_comment_rows(_xml())
-    assert rows[0].text.strip() == "好好看"
-    assert rows[1].text.strip() == "这两套也好看"
-    assert rows[2].text.strip() == "这俩也好看"
+    assert rows[0].text.strip() == "测试评论一"
+    assert rows[1].text.strip() == "测试评论二"
+    assert rows[2].text.strip() == "测试评论三"
 
 
 def test_reply_node_is_toplevel_time_reply_line():
@@ -38,4 +38,4 @@ def test_reply_node_is_toplevel_time_reply_line():
 def test_content_node_stored_for_fallback():
     rows = _parse_comment_rows(_xml())
     assert rows[0].content_node is not None
-    assert rows[0].content_node["text"].strip() == "好好看"
+    assert rows[0].content_node["text"].strip() == "测试评论一"

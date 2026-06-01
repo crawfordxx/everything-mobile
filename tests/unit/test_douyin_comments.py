@@ -22,9 +22,9 @@ def test_parses_visible_toplevel_rows():
 
 def test_row_text_comes_from_fco_content_desc():
     rows = _parse_comment_rows(_xml())
-    assert "我看上他了" in rows[0].text
-    assert "女主好美" in rows[1].text
-    assert "跪求一双" in rows[2].text
+    assert "测试评论一" in rows[0].text
+    assert "测试评论二" in rows[1].text
+    assert "测试评论三" in rows[2].text
 
 
 def test_reply_node_center_inside_its_fco():

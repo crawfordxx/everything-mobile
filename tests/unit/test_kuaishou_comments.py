@@ -21,9 +21,9 @@ def test_parses_visible_rows():
 
 def test_row_text_is_comment_node():
     rows = _parse_comment_rows(_xml())
-    assert "扒拉出来" in rows[0].text
-    assert rows[1].text == "有洁癖的猫猫"
-    assert "太聪明了" in rows[2].text
+    assert "测试评论一" in rows[0].text
+    assert rows[1].text == "测试评论二"
+    assert "测试评论三" in rows[2].text
 
 
 def test_reply_node_is_comment_reply():
