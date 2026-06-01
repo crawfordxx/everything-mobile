@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import argparse
 import re
+import shlex
 import time
 from pathlib import Path
 from typing import Any
 
 from mobilecli.apps._comments import CommentRow, select_comment
-from mobilecli.core.ui import find_all_by_resource_id
+from mobilecli.core import ime as _ime
+from mobilecli.core.ui import (
+    find_all_by_resource_id,
+    find_by_content_desc_contains,
+    find_first_by_class,
+)
 from mobilecli.envelope import EmError, ErrorCode
 from mobilecli.plugin import App, ExecContext
 
@@ -208,13 +214,15 @@ def like(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     """
     ctx.governor.check_or_raise("like")
 
+    # Locate by content-desc ("未点赞，喜欢N，按钮") so it works on both video
+    # detail (gl1) and photo-flow (qjl) layouts.
     xml = Path(ctx.ui.dump()["path"]).read_text()
-    like_btn = ctx.ui.find_by_resource_id(xml, "com.ss.android.ugc.aweme:id/gl1")
+    like_btn = find_by_content_desc_contains(xml, "喜欢", "按钮")
     if like_btn is None:
         raise EmError(
             ErrorCode.ELEMENT_NOT_FOUND,
             "Douyin like button not visible",
-            hint="open a video detail first via `douyin open --rank N`",
+            hint="open a video / photo detail first via `douyin open --rank N`",
         )
 
     before_liked = "已点赞" in like_btn.get("content_desc", "")
@@ -232,7 +240,7 @@ def like(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     time.sleep(1.5)
 
     xml = Path(ctx.ui.dump()["path"]).read_text()
-    after = ctx.ui.find_by_resource_id(xml, "com.ss.android.ugc.aweme:id/gl1")
+    after = find_by_content_desc_contains(xml, "喜欢", "按钮")
     after_liked = "已点赞" in (after.get("content_desc", "") if after else "")
     ctx.governor.record("like")
     return {
@@ -363,12 +371,12 @@ def reply(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     xml = Path(ctx.ui.dump()["path"]).read_text()
     rows = _parse_comment_rows(xml)
     if not rows:
-        cmt = ctx.ui.find_by_resource_id(xml, "com.ss.android.ugc.aweme:id/eql")
+        cmt = find_by_content_desc_contains(xml, "评论", "按钮")
         if cmt is None:
             raise EmError(
                 ErrorCode.ELEMENT_NOT_FOUND,
                 "comment entry not visible",
-                hint="open a video detail first via `douyin open --rank N`",
+                hint="open a video / photo detail first via `douyin open --rank N`",
             )
         ctx.input.tap_node(cmt)
         time.sleep(2)
@@ -377,54 +385,70 @@ def reply(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
 
     target = select_comment(rows, rank=args.rank, match=args.match)
 
-    # Tap the row's 回复 button -> opens compose targeted at that comment.
-    ctx.input.tap_node(target.reply_node)
-    time.sleep(1.5)
+    # CJK: pre-swap ADBKeyboard BEFORE opening compose; an IME switch while the
+    # compose is open dismisses it (same quirk handled in xiaohongshu.comment).
+    needs_cjk = not args.text.isascii()
+    prev_ime = _ime.current_ime(ctx.device) if needs_cjk else None
+    if needs_cjk:
+        _ime.set_adbkeyboard(ctx.device)
+        time.sleep(0.6)
 
-    inp = ctx.ui.find_by_resource_id(
-        Path(ctx.ui.dump()["path"]).read_text(), "com.ss.android.ugc.aweme:id/eoy"
-    )
-    if inp is None:
-        raise EmError(
-            ErrorCode.ELEMENT_NOT_FOUND,
-            "reply input not visible",
-            hint="tapping 回复 did not open the compose box",
-        )
-    ctx.input.tap_node(inp)
-    time.sleep(1.0)
-    ctx.input.type_text(args.text)  # type_text_humanized handles CJK via ADBKeyboard
-    time.sleep(1.5)
+    try:
+        # Tap the row's 回复 button -> opens compose targeted at that comment.
+        ctx.input.tap_node(target.reply_node)
+        time.sleep(1.5)
 
-    xml = Path(ctx.ui.dump()["path"]).read_text()
-    send_btn = ctx.ui.find_by_resource_id(xml, "com.ss.android.ugc.aweme:id/es1")
-    if send_btn is None:
-        raise EmError(
-            ErrorCode.ELEMENT_NOT_FOUND,
-            "send button did not appear",
-            hint="text may not have been entered; check IME with `doctor`",
-        )
+        xml = Path(ctx.ui.dump()["path"]).read_text()
+        inp = ctx.ui.find_by_resource_id(
+            xml, "com.ss.android.ugc.aweme:id/eoy"
+        ) or find_first_by_class(xml, "EditText")
+        if inp is None:
+            raise EmError(
+                ErrorCode.ELEMENT_NOT_FOUND,
+                "reply input not visible",
+                hint="tapping 回复 did not open the compose box",
+            )
+        ctx.input.tap_node(inp)
+        time.sleep(1.0)
+        if needs_cjk:
+            ctx.device.shell(f"am broadcast -a ADB_INPUT_TEXT --es msg {shlex.quote(args.text)}")
+        else:
+            ctx.input.type_text(args.text)
+        time.sleep(1.5)
 
-    if not getattr(args, "commit", False):
-        ctx.input.keyevent("back")
+        xml = Path(ctx.ui.dump()["path"]).read_text()
+        send_btn = ctx.ui.find_by_text(xml, "发送")  # robust across es1/es7/photo layouts
+        if send_btn is None:
+            raise EmError(
+                ErrorCode.ELEMENT_NOT_FOUND,
+                "send button did not appear",
+                hint="text may not have been entered; check IME with `doctor`",
+            )
+
+        if not getattr(args, "commit", False):
+            ctx.input.keyevent("back")
+            return {
+                "dry_run": True,
+                "committed": False,
+                "target_index": target.index,
+                "target_text": target.text,
+                "text": args.text,
+                "send_button_cx": send_btn["cx"],
+                "send_button_cy": send_btn["cy"],
+            }
+
+        ctx.input.tap_node(send_btn)
+        time.sleep(4)
+        xml = Path(ctx.ui.dump()["path"]).read_text()
+        verified = args.text in xml
+        ctx.governor.record("comment")
         return {
-            "dry_run": True,
-            "committed": False,
+            "dry_run": False,
+            "committed": True,
+            "verified_visible": verified,
             "target_index": target.index,
-            "target_text": target.text,
             "text": args.text,
-            "send_button_cx": send_btn["cx"],
-            "send_button_cy": send_btn["cy"],
         }
-
-    ctx.input.tap_node(send_btn)
-    time.sleep(4)
-    xml = Path(ctx.ui.dump()["path"]).read_text()
-    verified = args.text in xml
-    ctx.governor.record("comment")
-    return {
-        "dry_run": False,
-        "committed": True,
-        "verified_visible": verified,
-        "target_index": target.index,
-        "text": args.text,
-    }
+    finally:
+        if needs_cjk and prev_ime:
+            _ime.restore_ime(ctx.device, prev_ime)
