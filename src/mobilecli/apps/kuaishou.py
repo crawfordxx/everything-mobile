@@ -22,7 +22,11 @@ from typing import Any
 
 from mobilecli.apps._comments import CommentRow, select_comment
 from mobilecli.core import ime as _ime
-from mobilecli.core.ui import find_all_by_resource_id, find_first_by_class
+from mobilecli.core.ui import (
+    find_all_by_resource_id,
+    find_by_resource_id,
+    find_first_by_class,
+)
 from mobilecli.envelope import EmError, ErrorCode
 from mobilecli.plugin import App, ExecContext
 
@@ -112,6 +116,57 @@ def _ensure_home(ctx: ExecContext) -> dict[str, Any]:
         ctx.input.tap_node(home_tab)
         time.sleep(1.5)
     return ctx.app.foreground()
+
+
+_KS_NUM_RE = re.compile(r"(\d+(?:\.\d+)?)\s*([万亿]?)")
+
+
+def _to_int(s: str) -> int:
+    """'15'->15; content-desc '粉丝数，1个'->1; '1.2万'->12000。"""
+    m = _KS_NUM_RE.search(s or "")
+    if not m:
+        return 0
+    val = float(m.group(1))
+    unit = m.group(2)
+    if unit == "万":
+        val *= 10_000
+    elif unit == "亿":
+        val *= 100_000_000
+    return int(val)
+
+
+def _parse_kuaishou_profile(xml: str) -> dict[str, Any]:
+    """Parse Kuaishou 我 tab. logged_in oracle = 昵称/快手号 present.
+    粉丝/关注/获赞 counts live in the *_layout node's content-desc."""
+    PFX = "com.smile.gifmaker:id/"
+    nick = find_by_resource_id(xml, PFX + "user_name_tv")
+    kwai = find_by_resource_id(xml, PFX + "profile_user_kwai_id")
+    if nick is None and kwai is None:
+        return {"logged_in": False}
+
+    follower = find_by_resource_id(xml, PFX + "follower_layout")
+    following = find_by_resource_id(xml, PFX + "following_layout")
+    like = find_by_resource_id(xml, PFX + "like_layout")
+    bio = find_by_resource_id(xml, PFX + "user_text")
+    avatar = find_by_resource_id(xml, PFX + "avatar")
+
+    def _txt(node: dict[str, Any] | None) -> str:
+        return (node.get("text") or "").strip() if node else ""
+
+    def _desc(node: dict[str, Any] | None) -> str:
+        return (node.get("content_desc") or "") if node else ""
+
+    kwai_txt = _txt(kwai).replace("快手号：", "").replace("快手号:", "").strip()
+    return {
+        "logged_in": True,
+        "nickname": _txt(nick),
+        "kwai_id": kwai_txt,
+        "following_count": _to_int(_desc(following)),
+        "fans_count": _to_int(_desc(follower)),
+        "likes_count": _to_int(_desc(like)),
+        "bio": _txt(bio),
+        "avatar_bounds": tuple(avatar["bounds"]) if avatar else None,
+    }
 
 
 # ----- launch ------------------------------------------------------------------
@@ -471,3 +526,31 @@ def reply(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     if result.get("committed"):
         ctx.governor.record("comment")
     return result
+
+
+# ----- profile -----------------------------------------------------------------
+
+
+_ME_TAB_XY = (972, 2283)  # 快手底部导航 "我"
+
+
+def _profile_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--avatar-out", default=None, help="头像 PNG 落盘路径")
+
+
+@app.verb("profile", add_args=_profile_args)
+def profile(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """读取快手登录态;已登录则返回头像(裁剪PNG)/昵称/快手号/关注·粉丝·获赞数/简介。"""
+    _ensure_home(ctx)
+    ctx.input.tap_xy(*_ME_TAB_XY)
+    time.sleep(2.5)
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    info = _parse_kuaishou_profile(xml)
+    if not info.get("logged_in"):
+        return {"logged_in": False}
+    bounds = info.pop("avatar_bounds", None)
+    if bounds is not None:
+        info["avatar"] = ctx.ui.screenshot_region(bounds, args.avatar_out)["path"]
+    else:
+        info["avatar"] = None
+    return info
