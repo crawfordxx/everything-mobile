@@ -765,3 +765,45 @@ def profile(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     else:
         info["avatar"] = None
     return info
+
+
+# ----- publish (arg pure-fns) ---------------------------------------------------
+
+_PUB_IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp"}
+_PUB_VIDEO_EXT = {".mp4", ".mov"}
+
+
+def _classify_media(paths: list[str]) -> str:
+    """全图片->'image';恰好1视频且无图->'video';否则 INVALID_ARG。"""
+    from pathlib import Path as _P
+
+    exts = [_P(p).suffix.lower() for p in paths]
+    imgs = [e for e in exts if e in _PUB_IMAGE_EXT]
+    vids = [e for e in exts if e in _PUB_VIDEO_EXT]
+    bad = [e for e in exts if e not in _PUB_IMAGE_EXT | _PUB_VIDEO_EXT]
+    if bad:
+        raise EmError(ErrorCode.INVALID_ARG, f"unsupported media: {bad}")
+    if imgs and not vids:
+        return "image"
+    if len(vids) == 1 and not imgs:
+        return "video"
+    raise EmError(
+        ErrorCode.INVALID_ARG,
+        "media must be all images OR exactly one video (no mix)",
+    )
+
+
+def _parse_tags(s: str | None) -> list[str]:
+    if not s:
+        return []
+    return [t.strip() for t in s.split(",") if t.strip()]
+
+
+def _order_media_for_cover(
+    media: list[str], cover_index: int | None
+) -> list[str]:
+    """图文:把封面图排到首位(选中顺序=展示顺序,首张=封面)。"""
+    if cover_index is None or cover_index < 1 or cover_index > len(media):
+        return list(media)
+    i = cover_index - 1
+    return [media[i]] + media[:i] + media[i + 1 :]
