@@ -62,10 +62,10 @@ Sign commits with a real identity. Anonymous / `Co-Authored-By: random` PRs are 
 
 ## Code review
 
-Every PR gets a codex review pass against `docs/superpowers/specs/2026-05-21-everything-mobile-design.md` before merge. If you want to run it yourself first:
+Every PR gets a review pass for CRITICAL/HIGH issues before merge. If you want to run it yourself first:
 
 ```bash
-codex exec --skip-git-repo-check "Review the PR diff against the spec and flag CRITICAL/HIGH issues"
+codex exec --skip-git-repo-check "Review the PR diff and flag CRITICAL/HIGH issues"
 ```
 
 ## License
