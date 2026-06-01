@@ -284,6 +284,7 @@ def open_result(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
         )
     ctx.input.tap_node(cards[args.rank - 1])
     time.sleep(3)
+    ctx.input.idle_browse()
     return {"rank": args.rank, "foreground": ctx.app.foreground()}
 
 
@@ -306,6 +307,7 @@ def detail(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     like = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/noteLikeLayout")
     comment = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/noteCommentLayout")
     collect = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/noteCollectLayout")
+    ctx.input.reading_pause()
     return {
         "likes": _count(like),
         "comments": _count(comment),

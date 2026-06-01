@@ -209,6 +209,7 @@ def open_result(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     if toggle is not None:
         ctx.input.tap_node(toggle)
         time.sleep(2)
+    ctx.input.idle_browse()
     return {"rank": args.rank, "foreground": ctx.app.foreground()}
 
 
@@ -230,6 +231,7 @@ def detail(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     comment = ctx.ui.find_by_resource_id(xml, "com.ss.android.ugc.aweme:id/eql")
     share = ctx.ui.find_by_resource_id(xml, "com.ss.android.ugc.aweme:id/zk8")
     collect = ctx.ui.find_by_resource_id(xml, "com.ss.android.ugc.aweme:id/d_7")
+    ctx.input.reading_pause()
     return {
         "likes": _parse_count(like["content_desc"]) if like else "",
         "comments": _parse_count(comment["content_desc"]) if comment else "",
