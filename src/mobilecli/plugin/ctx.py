@@ -65,6 +65,11 @@ class UiModule:
     def screenshot(self, output_path: str | None = None) -> dict[str, Any]:
         return core_screenshot.capture(self.device, output_path)
 
+    def screenshot_region(
+        self, bounds: tuple[int, int, int, int], output_path: str | None = None
+    ) -> dict[str, Any]:
+        return core_screenshot.capture_region(self.device, bounds, output_path)
+
 
 @dataclass
 class AppModule:
