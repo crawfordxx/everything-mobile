@@ -18,7 +18,7 @@ from typing import Any
 
 from mobilecli.apps._comments import CommentRow, select_comment
 from mobilecli.core import ime as _ime
-from mobilecli.core.ui import find_all_by_resource_id
+from mobilecli.core.ui import find_all_by_resource_id, find_by_resource_id
 from mobilecli.envelope import EmError, ErrorCode
 from mobilecli.plugin import App, ExecContext
 
@@ -71,6 +71,56 @@ def _first_edittext(xml: str) -> dict[str, Any] | None:
         "cy": (y1 + y2) // 2,
         "text": "",
         "content_desc": "",
+    }
+
+
+_NUM_RE = re.compile(r"(\d+(?:\.\d+)?)\s*([万亿]?)")
+
+
+def _to_int(s: str) -> int:
+    """'29' -> 29; '1.6万' -> 16000; content-desc '2关注' -> 2."""
+    m = _NUM_RE.search(s or "")
+    if not m:
+        return 0
+    val = float(m.group(1))
+    unit = m.group(2)
+    if unit == "万":
+        val *= 10_000
+    elif unit == "亿":
+        val *= 100_000_000
+    return int(val)
+
+
+def _parse_profile(xml: str) -> dict[str, Any]:
+    """Parse the 我/profile tab. logged_in oracle = nickname/iv_avatar present."""
+    PFX = "com.xingin.xhs:id/"
+    nick = find_by_resource_id(xml, PFX + "profile_new_page_avatar_card_nickname")
+    avatar = find_by_resource_id(xml, PFX + "iv_avatar")
+    if nick is None and avatar is None:
+        return {"logged_in": False}
+
+    redid = find_by_resource_id(xml, PFX + "profile_new_page_avatar_card_redid")
+    ip = find_by_resource_id(xml, PFX + "profile_new_page_avatar_card_ip")
+    bio = find_by_resource_id(xml, PFX + "userDescTv")
+    follow = find_by_resource_id(xml, PFX + "follow_count")
+    fans = find_by_resource_id(xml, PFX + "fans_count")
+    fav = find_by_resource_id(xml, PFX + "fav_count")
+
+    def _txt(node: dict[str, Any] | None) -> str:
+        return (node.get("text") or "").strip() if node else ""
+
+    red_txt = _txt(redid).replace("小红书号：", "").replace("小红书号:", "").strip()
+    ip_txt = _txt(ip).replace("IP：", "").replace("IP:", "").strip()
+    return {
+        "logged_in": True,
+        "nickname": _txt(nick),
+        "red_id": red_txt,
+        "ip": ip_txt,
+        "follow_count": _to_int(_txt(follow)),
+        "fans_count": _to_int(_txt(fans)),
+        "fav_count": _to_int(_txt(fav)),
+        "bio": _txt(bio),
+        "avatar_bounds": tuple(avatar["bounds"]) if avatar else None,
     }
 
 
