@@ -123,6 +123,8 @@ adb shell ime enable com.android.adbkeyboard/.AdbIME
 | `mobilecli xiaohongshu like [--commit]` | 给当前笔记点赞 | 默认 dry-run；`--commit` 需 `EM_ALLOW_COMMIT=1` |
 | `mobilecli xiaohongshu comment --text T [--commit]` | 在当前笔记下评论 | 默认 dry-run；`--commit` 需 `EM_ALLOW_COMMIT=1` |
 | `mobilecli xiaohongshu engage --keyword K [--limit N] [--like] [--comment-text T] [--sleep S] [--commit]` | 搜词 + 遍历 top N + 批量点赞/评论 | 复合 verb；默认 dry-run；强烈建议先无 `--commit` 试跑；用前请重读上方免责 |
+| `mobilecli xiaohongshu profile [--avatar-out PATH]` | 读登录态；已登录返回头像(裁剪PNG)/昵称/小红书号/关注·粉丝·获赞数/简介 | 只读 |
+| `mobilecli xiaohongshu publish --media P... --title T --body B [--tags "a,b"] [--cover N\|PATH] [--declare ai\|original\|...] [--commit]` | 发布图文(多图)或视频 | 按扩展名自动判型；默认 dry-run(推素材+走到发布键前截图)；`--commit` 需 `EM_ALLOW_COMMIT=1`。需先授予小红书完整 READ_MEDIA 权限 |
 
 ### 全局 flag
 
