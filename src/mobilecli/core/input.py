@@ -58,35 +58,36 @@ def swipe_raw(
     return {"x1": x1, "y1": y1, "x2": x2, "y2": y2, "duration_ms": duration_ms}
 
 
-def swipe_humanized(
-    device: Device,
-    start: tuple[int, int],
-    end: tuple[int, int],
-) -> dict[str, Any]:
-    """Humanized swipe.
+def _screen_wh(device: Device) -> tuple[int, int]:
+    try:
+        out = device.shell("wm size")
+        import re as _re
+        m = _re.search(r"(\d+)x(\d+)", out)
+        if m:
+            return int(m.group(1)), int(m.group(2))
+    except Exception:  # noqa: BLE001
+        pass
+    return (1080, 2410)
 
-    v1 LIMITATION (codex review 2026-05-21): we emit a single straight `adb
-    shell input swipe X1 Y1 X2 Y2 dur` with randomized duration ∈ [600,1200] ms.
-    The bezier points are computed for telemetry / future use but NOT emitted
-    as multi-segment, because `input swipe` only supports straight-line
-    interpolation. True bezier-shaped gestures require minitouch / sendevent
-    multi-segment dispatch -- deferred to v2.
 
-    Endpoints are jittered ±4 px so two identical-input swipes don't produce
-    bit-identical `input swipe` lines.
-    """
-    pts = _hz.bezier_swipe_points(start, end, n_points=35)
-    duration_ms = random.randint(600, 1200)
+def swipe_humanized(device: Device, start, end) -> dict[str, Any]:
+    """Humanized swipe: sendevent 连续曲线(0.8~2.0s),探测失败回退直线 input swipe。"""
+    from mobilecli.core import touch as _touch
+
+    pts = _hz.bezier_swipe_points(start, end, n_points=24)
+    dur = _hz.swipe_duration_s()
+    info = _touch.probe_touch_device(device)
+    if info is not None:
+        res = _touch.curved_swipe(device, pts, dur, _screen_wh(device), info)
+        if res is not None:
+            return {"mode": "curved", **res}
     sx, sy = _hz.jittered_xy(start[0], start[1], radius=4)
     ex, ey = _hz.jittered_xy(end[0], end[1], radius=4)
-    device.shell(f"input swipe {sx} {sy} {ex} {ey} {duration_ms}")
+    device.shell(f"input swipe {sx} {sy} {ex} {ey} {int(dur * 1000)}")
     return {
-        "x1": sx,
-        "y1": sy,
-        "x2": ex,
-        "y2": ey,
-        "duration_ms": duration_ms,
-        "points": pts,
+        "mode": "line",
+        "x1": sx, "y1": sy, "x2": ex, "y2": ey,
+        "duration_ms": int(dur * 1000),
     }
 
 
