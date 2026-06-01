@@ -1,26 +1,24 @@
 # everything-mobile
 
-> AI-friendly CLI for driving Android phones — no AI inside.
+> 用 AI 驱动安卓手机的命令行工具 —— 库内无 AI。
 
-`mobilecli` is a Python CLI that lets external AI agents (Claude Code, Codex CLI, openclaw, etc.) drive a physical Android phone. Every command is JSON-in / JSON-out and stateless; the AI reads screenshots / XML dumps the CLI writes to disk and decides what to do next.
+`mobilecli` 是一个 Python 命令行工具，让外部 AI 智能体（Claude Code、Codex CLI、openclaw 等）驱动一台真实的安卓手机。每条命令都是 JSON 进 / JSON 出且无状态；AI 读取 CLI 写到磁盘的截图 / XML dump，再决定下一步做什么。
 
-There is **no AI inside this library**. The intelligence lives in whatever tool is invoking `mobilecli`.
+**这个库里没有 AI。** 智能存在于调用 `mobilecli` 的那个工具里。
 
 <p align="center"><img src="docs/images/arch-01-architecture.png" alt="everything-mobile 架构：AI 智能体 → mobilecli（JSON 进出·无状态）→ adb → 安卓真机；分层 设备/输入原语/人类化风控/App 插件" width="860"></p>
 
 ---
 
-## ⚠️ Disclaimer / 免责声明
+## ⚠️ 免责声明
 
-> **This project is for learning and security research only.** It is a generic Android automation library that demonstrates how AI agents can drive mobile apps. The maintainers do not endorse, recommend, or take responsibility for any use that violates the terms of service of any third-party platform (including but not limited to Douyin / 抖音, Kuaishou / 快手, Xiaohongshu / 小红书, WeChat / 微信, TikTok). Users are solely responsible for their own actions, account safety, and compliance with applicable laws. Using this project to spam, harass, mass-message, fake engagement, or evade platform anti-abuse measures is **explicitly out of scope** and unsupported. By using this software you accept all risk including but not limited to account suspension, rate-limiting, shadowban, and permanent device-level platform restrictions.
->
 > **本项目仅用于学习与安全研究。** 这是一个通用的 Android 自动化库，演示 AI 代理如何驱动移动 App。维护者不鼓励、不推荐、不为任何违反第三方平台（包括但不限于抖音、快手、小红书、微信、TikTok）服务条款的使用行为负责。使用者须独立承担行为、账号安全与法律合规责任。使用本项目用于刷量、骚扰、群发、伪造互动、规避平台反作弊机制等行为，**明确不在本项目支持范围内**。使用本软件即代表接受所有风险，包括但不限于账号封禁、限流、限评、设备级封锁。
 >
-> **关于状态变更操作 / On state-mutating verbs.** Some verbs (`like`, `comment`, `reply`, batch `engage`, and `publish`) can actually modify platform state when invoked with `--commit` plus the `EM_ALLOW_COMMIT=1` environment gate. This dual-gate is a *technical safety net*, not authorization — it forces the operator to make a deliberate, irreversible choice. Daily caps (governor) and content linting are enforced, but they exist to slow you down, not to make automated engagement safe or compliant. **Setting `EM_ALLOW_COMMIT=1` is your sole legal and ethical responsibility.** 这些动作（点赞 / 评论 / 回复 / 批量 engage / 发布 publish）需要 `--commit` + `EM_ALLOW_COMMIT=1` 双闸；开启即代表你独立承担一切平台与法律后果。
+> **关于状态变更操作。** 部分动作（`like` 点赞 / `comment` 评论 / `reply` 回复 / 批量 `engage` / `publish` 发布）在加 `--commit` 且设置 `EM_ALLOW_COMMIT=1` 环境变量时，会真正改动平台状态。这道双闸是*技术防呆*，不是授权——它强制操作者做出明确、不可逆的选择。每日上限（governor）与文案检查会被执行，但它们只是为了让你慢下来，并不能让自动化互动变得安全或合规。**设置 `EM_ALLOW_COMMIT=1` 的一切法律与道德责任由你独自承担。**
 
 ---
 
-## Quickstart
+## 快速开始
 
 ```bash
 pipx install -e .
@@ -29,7 +27,7 @@ mobilecli doctor
 mobilecli screenshot -o /tmp/x.png
 ```
 
-For the **first-time Redmi/MIUI ADB setup**, see the section below before anything else works.
+**第一次用红米 / MIUI 的话**，先看下面的 ADB 调试设置，否则什么都跑不起来。
 
 ---
 
@@ -137,9 +135,9 @@ adb shell ime enable com.android.adbkeyboard/.AdbIME
 
 > `profile` 各端返回字段:小红书 `nickname/red_id/ip/follow_count/fans_count/fav_count/bio/avatar`;抖音 `nickname/douyin_id/following_count/fans_count/likes_count/avatar`;快手 `nickname/kwai_id/following_count/fans_count/likes_count/bio/avatar`。未登录只返回 `logged_in:false`。
 
-### 全局 flag
+### 全局参数
 
-| Flag | 含义 |
+| 参数 | 含义 |
 |---|---|
 | `--serial SERIAL` | 指定设备（多机时必填，单机时可省，读 `EM_SERIAL` 兜底） |
 | `--pretty` | JSON 缩进打印 |
@@ -196,7 +194,7 @@ adb shell ime enable com.android.adbkeyboard/.AdbIME
 
 ---
 
-## What this is NOT / 不是什么
+## 不是什么
 
 这些用例**不在本项目支持范围内**，对应 PR 会被关闭：
 
@@ -225,12 +223,12 @@ adb shell ime enable com.android.adbkeyboard/.AdbIME
 
 ---
 
-## Contributing
+## 贡献
 
 PR 欢迎，但务必先看 [`CONTRIBUTING.md`](CONTRIBUTING.md)。新 verb 必须配 fixture 单测 + 真机集成测试。匿名 PR 会被关闭。
 
 ---
 
-## License
+## 许可证
 
-MIT.
+MIT。
