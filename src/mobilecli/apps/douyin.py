@@ -338,3 +338,93 @@ def comment(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
         "verified_visible": verified,
         "text": args.text,
     }
+
+
+# ----- reply (二级追评) ---------------------------------------------------------
+
+
+def _reply_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--rank", type=int, help="reply to the Nth visible comment")
+    p.add_argument("--match", help="reply to first visible comment containing this text")
+    p.add_argument("--text", required=True)
+
+
+@app.verb("reply", add_args=_reply_args, requires_commit_flag=True)
+def reply(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """Reply to a comment on the current video (creates a 2nd-level reply).
+
+    Select target by --rank N or --match "kw" (exactly one). Default = dry-run
+    (locate target + send button, cancel). --commit actually sends.
+    """
+    ctx.linter.check_or_raise(args.text)
+    ctx.governor.check_or_raise("comment")
+
+    # Ensure the comments overlay is open (parse; if empty, tap comment icon).
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    rows = _parse_comment_rows(xml)
+    if not rows:
+        cmt = ctx.ui.find_by_resource_id(xml, "com.ss.android.ugc.aweme:id/eql")
+        if cmt is None:
+            raise EmError(
+                ErrorCode.ELEMENT_NOT_FOUND,
+                "comment entry not visible",
+                hint="open a video detail first via `douyin open --rank N`",
+            )
+        ctx.input.tap_node(cmt)
+        time.sleep(2)
+        xml = Path(ctx.ui.dump()["path"]).read_text()
+        rows = _parse_comment_rows(xml)
+
+    target = select_comment(rows, rank=args.rank, match=args.match)
+
+    # Tap the row's 回复 button -> opens compose targeted at that comment.
+    ctx.input.tap_node(target.reply_node)
+    time.sleep(1.5)
+
+    inp = ctx.ui.find_by_resource_id(
+        Path(ctx.ui.dump()["path"]).read_text(), "com.ss.android.ugc.aweme:id/eoy"
+    )
+    if inp is None:
+        raise EmError(
+            ErrorCode.ELEMENT_NOT_FOUND,
+            "reply input not visible",
+            hint="tapping 回复 did not open the compose box",
+        )
+    ctx.input.tap_node(inp)
+    time.sleep(1.0)
+    ctx.input.type_text(args.text)  # type_text_humanized handles CJK via ADBKeyboard
+    time.sleep(1.5)
+
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    send_btn = ctx.ui.find_by_resource_id(xml, "com.ss.android.ugc.aweme:id/es1")
+    if send_btn is None:
+        raise EmError(
+            ErrorCode.ELEMENT_NOT_FOUND,
+            "send button did not appear",
+            hint="text may not have been entered; check IME with `doctor`",
+        )
+
+    if not getattr(args, "commit", False):
+        ctx.input.keyevent("back")
+        return {
+            "dry_run": True,
+            "committed": False,
+            "target_index": target.index,
+            "target_text": target.text,
+            "text": args.text,
+            "send_button_cx": send_btn["cx"],
+            "send_button_cy": send_btn["cy"],
+        }
+
+    ctx.input.tap_node(send_btn)
+    time.sleep(4)
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    verified = args.text in xml
+    ctx.governor.record("comment")
+    return {
+        "dry_run": False,
+        "committed": True,
+        "verified_visible": verified,
+        "target_index": target.index,
+        "text": args.text,
+    }
