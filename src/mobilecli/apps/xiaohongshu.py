@@ -723,3 +723,45 @@ def engage(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
         "did_comment": bool(args.comment_text),
         "iterations": iterations,
     }
+
+
+_ME_TAB_XY = (972, 2288)  # bottom nav 我 (index_me center @1080x2410)
+
+
+def _dismiss_unfinished_draft(ctx: ExecContext) -> None:
+    """若弹「继续编辑笔记吗?」草稿恢复弹窗,点关闭(不存草稿、不去编辑)。"""
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    btn = ctx.ui.find_by_resource_id(
+        xml, "com.xingin.xhs:id/btn_unfinished_draft_dialog_exit"
+    )
+    if btn is not None:
+        ctx.input.tap_node(btn)
+        time.sleep(0.8)
+
+
+def _profile_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--avatar-out", default=None, help="头像 PNG 落盘路径")
+
+
+@app.verb("profile", add_args=_profile_args)
+def profile(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """读取登录态;已登录则返回头像(裁剪PNG)/昵称/小红书号/计数/简介。"""
+    ctx.app.ensure_foreground()
+    time.sleep(1.0)
+    _dismiss_unfinished_draft(ctx)
+    ctx.input.tap_xy(*_ME_TAB_XY)  # 我 tab
+    time.sleep(2.0)
+    _dismiss_unfinished_draft(ctx)
+
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    info = _parse_profile(xml)
+    if not info.get("logged_in"):
+        return {"logged_in": False}
+
+    bounds = info.pop("avatar_bounds", None)
+    if bounds is not None:
+        shot = ctx.ui.screenshot_region(bounds, args.avatar_out)
+        info["avatar"] = shot["path"]
+    else:
+        info["avatar"] = None
+    return info
