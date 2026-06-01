@@ -29,8 +29,11 @@ def _pace_enabled() -> bool:
 
 
 def _pace_bounds() -> tuple[float, float]:
-    lo = float(os.environ.get("EM_PACE_MIN", "2"))
-    hi = float(os.environ.get("EM_PACE_MAX", "10"))
+    try:
+        lo = float(os.environ.get("EM_PACE_MIN", "2"))
+        hi = float(os.environ.get("EM_PACE_MAX", "10"))
+    except ValueError:
+        return (2.0, 10.0)  # 非数字 env -> 回落默认,不让一个笔误炸掉整条 verb
     return (lo, hi) if hi > lo else (2.0, 10.0)
 
 
@@ -53,7 +56,11 @@ class InputModule:
             time.sleep(_hz.read_pause_s(text_length=text_length))
 
     def idle_browse(self, prob: float = 0.4) -> None:
-        """偶发(prob 概率)小幅来回滑动模拟看内容。"""
+        """偶发(prob 概率)小幅来回滑动模拟看内容。
+
+        故意走 self.swipe(而非直接 swipe_humanized):这条 wobble 也应带上
+        操作间 pace 延迟——人看内容时的小动作本就有停顿,慢=像人。
+        """
         if not _pace_enabled() or random.random() > prob:
             return
         sh = 2410

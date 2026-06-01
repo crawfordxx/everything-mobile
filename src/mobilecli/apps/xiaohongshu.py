@@ -1003,6 +1003,8 @@ def publish(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     media = args.media
     if media_type == "image":
         media = _order_media_for_cover(media, cover_index)
+    # cover_path 最后推 -> mtime 最新 -> 相册「最近」排第一格 -> _set_video_cover 取 thumbs[0]。
+    # 若改动推送顺序,务必同步 _set_video_cover 的索引。
     to_push = list(media) + ([cover_path] if cover_path else [])
     pushed = ctx.media.push_to_gallery(to_push)
 
