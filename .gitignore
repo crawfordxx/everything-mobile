@@ -7,3 +7,8 @@ dist/
 build/
 .DS_Store
 /tmp-*
+
+# session artifacts / logs (never commit — may contain prompts or message data)
+handoff.md
+handoff.archived-*.md
+logs/
