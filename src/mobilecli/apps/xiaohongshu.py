@@ -458,6 +458,128 @@ def comment(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
             _ime.restore_ime(ctx.device, prev_ime)
 
 
+# ----- reply (二级追评) ---------------------------------------------------------
+
+
+def _scroll_to_comments(ctx: ExecContext, max_swipes: int = 5) -> list[CommentRow]:
+    """Swipe up on the note detail until top-level comments come into view.
+
+    Mirrors spec §3.4 step1: the verb ensures comments are visible (already
+    there -> no-op). Returns the parsed rows from the final screen state.
+    """
+    rows = _parse_comment_rows(Path(ctx.ui.dump()["path"]).read_text())
+    swipes = 0
+    while not rows and swipes < max_swipes:
+        ctx.input.swipe((540, 1800), (540, 700))
+        time.sleep(1.0)
+        rows = _parse_comment_rows(Path(ctx.ui.dump()["path"]).read_text())
+        swipes += 1
+    return rows
+
+
+def _reply_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--rank", type=int, help="reply to the Nth visible comment")
+    p.add_argument("--match", help="reply to first visible comment containing this text")
+    p.add_argument("--text", required=True)
+
+
+@app.verb("reply", add_args=_reply_args, requires_commit_flag=True)
+def reply(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """Reply to a comment on the current note (creates a 2nd-level reply).
+
+    Select target by --rank N or --match "kw" (exactly one). Default = dry-run
+    (locate target + send button, cancel). --commit actually sends.
+    Scrolls the note detail to bring comments into view if needed.
+    """
+    ctx.linter.check_or_raise(args.text)
+    ctx.governor.check_or_raise("comment")
+
+    rows = _scroll_to_comments(ctx)
+    if not rows:
+        raise EmError(
+            ErrorCode.ELEMENT_NOT_FOUND,
+            "no comments found after scrolling",
+            hint="open a note detail first via `xiaohongshu open --rank N`",
+        )
+    target = select_comment(rows, rank=args.rank, match=args.match)
+
+    # CJK: pre-swap ADBKeyboard before opening compose; restore at the very end
+    # (an IME change while compose is open dismisses it -- same as `comment`).
+    needs_cjk = not args.text.isascii()
+    prev_ime = _ime.current_ime(ctx.device) if needs_cjk else None
+    if needs_cjk:
+        _ime.set_adbkeyboard(ctx.device)
+        time.sleep(0.6)
+
+    try:
+        # Tap the 回复 affordance: it's the right-end word of the time/region line
+        # ("04-17 河北 回复"). Center is the date, so tap near the right edge.
+        rn = target.reply_node
+        ctx.input.tap_xy(rn["bounds"][2] - 40, rn["cy"])
+        time.sleep(1.5)
+
+        xml = Path(ctx.ui.dump()["path"]).read_text()
+        compose = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/mContentET")
+        if compose is None and target.content_node is not None:
+            # Fallback: right-edge tap missed the 回复 span -> tap the comment
+            # text itself (also opens the reply compose on this build).
+            ctx.input.tap_node(target.content_node)
+            time.sleep(1.5)
+            xml = Path(ctx.ui.dump()["path"]).read_text()
+            compose = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/mContentET")
+        if compose is None:
+            raise EmError(
+                ErrorCode.ELEMENT_NOT_FOUND,
+                "XHS reply compose not visible",
+                hint="tapping 回复 did not open the compose box; verify tap point with screenshot",
+            )
+
+        ctx.input.tap_node(compose)
+        time.sleep(1.0)
+        if needs_cjk:
+            ctx.device.shell(f"am broadcast -a ADB_INPUT_TEXT --es msg {shlex.quote(args.text)}")
+        else:
+            ctx.input.type_text(args.text)
+        time.sleep(1.5)
+
+        xml = Path(ctx.ui.dump()["path"]).read_text()
+        send_btn = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/commentFuncBtnSend")
+        if send_btn is None:
+            raise EmError(
+                ErrorCode.ELEMENT_NOT_FOUND,
+                "send button did not appear",
+                hint="text may not have been entered; check IME with `doctor`",
+            )
+
+        if not getattr(args, "commit", False):
+            ctx.input.keyevent("back")
+            return {
+                "dry_run": True,
+                "committed": False,
+                "target_index": target.index,
+                "target_text": target.text,
+                "text": args.text,
+                "send_button_cx": send_btn["cx"],
+                "send_button_cy": send_btn["cy"],
+            }
+
+        ctx.input.tap_node(send_btn)
+        time.sleep(4)
+        xml = Path(ctx.ui.dump()["path"]).read_text()
+        verified = args.text in xml
+        ctx.governor.record("comment")
+        return {
+            "dry_run": False,
+            "committed": True,
+            "verified_visible": verified,
+            "target_index": target.index,
+            "text": args.text,
+        }
+    finally:
+        if needs_cjk and prev_ime:
+            _ime.restore_ime(ctx.device, prev_ime)
+
+
 # ----- engage (search → iterate → like / comment) ------------------------------
 
 
