@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import struct
 import time
 from pathlib import Path
@@ -28,3 +29,22 @@ def capture(device: Device, output_path: str | None = None) -> dict[str, Any]:
     Path(output_path).write_bytes(data)
     width, height = _png_dimensions(data)
     return {"path": output_path, "size": len(data), "width": width, "height": height}
+
+
+def capture_region(
+    device: Device,
+    bounds: tuple[int, int, int, int],
+    output_path: str | None = None,
+) -> dict[str, Any]:
+    """Screencap full screen, crop to `bounds` (x1,y1,x2,y2), save PNG."""
+    from PIL import Image  # local import: optional dep, only needed here
+
+    if output_path is None:
+        output_path = f"/tmp/em-region-{int(time.time() * 1000)}.png"
+    data = device.exec_out(["screencap", "-p"])
+    with Image.open(io.BytesIO(data)) as im:
+        x1, y1, x2, y2 = bounds
+        crop = im.crop((x1, y1, x2, y2))
+        crop.save(output_path)
+        w, h = crop.size
+    return {"path": output_path, "width": w, "height": h}

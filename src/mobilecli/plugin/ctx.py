@@ -7,23 +7,68 @@ governor + linter unbypassable from plugin code.
 
 from __future__ import annotations
 
+import os
+import random
+import time
 from dataclasses import dataclass
 from typing import Any
 
 from mobilecli.adb.device import Device
 from mobilecli.core import app as core_app
 from mobilecli.core import input as core_input
+from mobilecli.core import media as core_media
 from mobilecli.core import screenshot as core_screenshot
 from mobilecli.core import ui as core_ui
+from mobilecli.safety import humanize as _hz
 from mobilecli.safety.governor import SessionGovernor
 from mobilecli.safety.linter import ContentLinter
+
+
+def _pace_enabled() -> bool:
+    return os.environ.get("EM_PACE", "1") != "0"
+
+
+def _pace_bounds() -> tuple[float, float]:
+    try:
+        lo = float(os.environ.get("EM_PACE_MIN", "2"))
+        hi = float(os.environ.get("EM_PACE_MAX", "10"))
+    except ValueError:
+        return (2.0, 10.0)  # 非数字 env -> 回落默认,不让一个笔误炸掉整条 verb
+    return (lo, hi) if hi > lo else (2.0, 10.0)
 
 
 @dataclass
 class InputModule:
     device: Device
+    _first: bool = True
+
+    def _pace(self) -> None:
+        if not _pace_enabled():
+            return
+        if self._first:
+            self._first = False
+            return
+        time.sleep(_hz.pace_delay_s(*_pace_bounds()))
+
+    def reading_pause(self, text_length: int = 200) -> None:
+        """模拟阅读停顿(浏览类 verb 读完内容后调)。"""
+        if _pace_enabled():
+            time.sleep(_hz.read_pause_s(text_length=text_length))
+
+    def idle_browse(self, prob: float = 0.4) -> None:
+        """偶发(prob 概率)小幅来回滑动模拟看内容。
+
+        故意走 self.swipe(而非直接 swipe_humanized):这条 wobble 也应带上
+        操作间 pace 延迟——人看内容时的小动作本就有停顿,慢=像人。
+        """
+        if not _pace_enabled() or random.random() > prob:
+            return
+        sh = 2410
+        start, end = _hz.micro_wobble_swipe(center_y=sh // 2, screen_h=sh)
+        self.swipe(start, end)
 
     def tap_node(self, node: dict[str, Any]) -> dict[str, Any]:
+        self._pace()
         bounds = node.get("bounds")
         if not bounds:
             raise ValueError(f"node has no bounds: {node!r}")
@@ -31,15 +76,19 @@ class InputModule:
         return core_input.tap_humanized(self.device, bounds=(bx1, by1, bx2, by2))
 
     def tap_xy(self, x: int, y: int) -> dict[str, Any]:
+        self._pace()
         return core_input.tap_humanized(self.device, x=x, y=y)
 
     def swipe(self, start: tuple[int, int], end: tuple[int, int]) -> dict[str, Any]:
+        self._pace()
         return core_input.swipe_humanized(self.device, start, end)
 
     def type_text(self, text: str) -> dict[str, Any]:
+        self._pace()
         return core_input.type_text_humanized(self.device, text)
 
     def keyevent(self, code: int | str) -> dict[str, Any]:
+        self._pace()
         return core_input.keyevent_raw(self.device, code)
 
 
@@ -64,6 +113,21 @@ class UiModule:
 
     def screenshot(self, output_path: str | None = None) -> dict[str, Any]:
         return core_screenshot.capture(self.device, output_path)
+
+    def screenshot_region(
+        self, bounds: tuple[int, int, int, int], output_path: str | None = None
+    ) -> dict[str, Any]:
+        return core_screenshot.capture_region(self.device, bounds, output_path)
+
+
+@dataclass
+class MediaModule:
+    device: Device
+
+    def push_to_gallery(
+        self, local_paths: list[str], subdir: str = "em-publish"
+    ) -> dict[str, Any]:
+        return core_media.push_to_gallery(self.device, local_paths, subdir)
 
 
 @dataclass
@@ -94,6 +158,7 @@ class ExecContext:
     input: InputModule
     ui: UiModule
     app: AppModule
+    media: MediaModule
     governor: SessionGovernor
     linter: ContentLinter
 
@@ -111,6 +176,7 @@ class ExecContext:
             input=InputModule(device=device),
             ui=UiModule(device=device),
             app=AppModule(device=device, package=package),
+            media=MediaModule(device=device),
             governor=SessionGovernor(account=account, caps=caps),
             linter=ContentLinter(extra_patterns=extra_lint),
         )
