@@ -99,3 +99,25 @@ def read_pause_s(*, text_length: int = 200, seen_recently: bool = False) -> floa
 def per_char_type_delay_s() -> float:
     """Per-character delay for ASCII typing (log-normal 120ms, σ=0.6)."""
     return random.lognormvariate(math.log(0.120), 0.6)
+
+
+def pace_delay_s(lo: float = 2.0, hi: float = 10.0) -> float:
+    """操作间延迟:截断高斯,均值=(lo+hi)/2,σ=(hi-lo)/4,clamp[lo,hi]。"""
+    mu = (lo + hi) / 2.0
+    sigma = (hi - lo) / 4.0
+    return max(lo, min(hi, random.gauss(mu, sigma)))
+
+
+def swipe_duration_s(lo: float = 0.8, hi: float = 2.0) -> float:
+    return random.uniform(lo, hi)
+
+
+def micro_wobble_swipe(
+    center_y: int, screen_h: int
+) -> tuple[tuple[int, int], tuple[int, int]]:
+    """阅读时小幅来回:在屏中线、center_y 附近做一段短垂直滑动(看内容)。"""
+    cx = 540
+    amp = random.randint(int(screen_h * 0.04), int(screen_h * 0.10))
+    direction = random.choice((-1, 1))
+    y0 = max(amp + 1, min(screen_h - amp - 1, center_y))
+    return (cx, y0), (cx, y0 + direction * amp)
