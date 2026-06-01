@@ -32,6 +32,7 @@ app = App(
         "dm": 30,
         "follow": 30,
         "like": 100,
+        "publish": 3,
     },
     extra_lint_patterns=[],
 )
@@ -807,3 +808,317 @@ def _order_media_for_cover(
         return list(media)
     i = cover_index - 1
     return [media[i]] + media[:i] + media[i + 1 :]
+
+
+# ===== publish (00-selectors-publish.md) =====
+_PUB = {
+    "post_entry": (540, 2288),          # id/index_post
+    "album_from_gallery": (540, 1775),  # 面板 id/rlFirst 从相册选择
+    "go_next": "com.xingin.xhs:id/bottomGoNext",        # 选完下一步
+    "video_edit_next": "com.xingin.xhs:id/capa_light_edit_next",
+    "title": "com.xingin.xhs:id/editTitle",
+    "body": "com.xingin.xhs:id/postNoteEditContentView",
+    "add_topic": "com.xingin.xhs:id/addTopicView",
+    "topic_name": "com.xingin.xhs:id/tvTopicName",
+    "cover_entry": "com.xingin.xhs:id/bottomEditCoverAreaV2",
+    "cover_album_btn": "com.xingin.xhs:id/album_cover_layout",
+    "cover_thumb": "com.xingin.xhs:id/thumbnailIv",
+    "cover_done": "com.xingin.xhs:id/btnDone",
+    "cover_edit_done": "com.xingin.xhs:id/rightTv",
+    "publish_btn": "com.xingin.xhs:id/capaBigPostBtn",
+    "loc_refuse": "com.xingin.xhs:id/text_refuse",
+    "select_circle": "com.xingin.xhs:id/selectableLayout",
+    "no_perm_text": "去开启权限",
+}
+
+_DECLARE_TEXT = {
+    "ai": "含 AI 合成内容",
+    "original": "内容为自行拍摄",
+    "repost": "内容为转载",
+    "fiction": "含虚构演绎内容",
+    "marketing": "内容含营销信息",
+    "opinion": "个人观点，仅供参考",
+}
+
+
+def _select_pushed_media(ctx: ExecContext, count: int) -> None:
+    """点前 count 个网格单元的选择圈(推入素材已 touch 到相册最前)。"""
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    circles = ctx.ui.find_all_by_resource_id(xml, _PUB["select_circle"])
+    if len(circles) < count:
+        raise EmError(
+            ErrorCode.ELEMENT_NOT_FOUND,
+            f"album shows {len(circles)} selectable items, need {count}",
+            hint="pushed media not visible; check READ_MEDIA permission / scan",
+        )
+    for i in range(count):
+        ctx.input.tap_node(circles[i])
+        time.sleep(0.6)
+    go = ctx.ui.find_by_resource_id(Path(ctx.ui.dump()["path"]).read_text(), _PUB["go_next"])
+    if go is None:
+        raise EmError(ErrorCode.ELEMENT_NOT_FOUND, "下一步 button not found")
+    ctx.input.tap_node(go)
+    time.sleep(3)
+
+
+def _type_cjk(ctx: ExecContext, node: dict[str, Any], text: str) -> None:
+    """点输入框 + ADBKeyboard 输入 + 回查重试(CJK 时切 ADBKeyboard 末尾恢复)。"""
+    needs_cjk = not text.isascii()
+    prev = _ime.current_ime(ctx.device) if needs_cjk else None
+    if needs_cjk:
+        _ime.set_adbkeyboard(ctx.device)
+        time.sleep(0.6)
+    try:
+        ctx.input.tap_node(node)
+        time.sleep(1.0)
+        for _attempt in range(2):
+            if needs_cjk:
+                ctx.device.shell(
+                    f"am broadcast -a ADB_INPUT_TEXT --es msg {shlex.quote(text)}"
+                )
+            else:
+                ctx.input.type_text(text)
+            time.sleep(1.2)
+            xml = Path(ctx.ui.dump()["path"]).read_text()
+            if text[:6] in xml:
+                return
+    finally:
+        if needs_cjk and prev:
+            _ime.restore_ime(ctx.device, prev)
+
+
+def _add_topics(ctx: ExecContext, tags: list[str]) -> list[bool]:
+    linked: list[bool] = []
+    for t in tags:
+        xml = Path(ctx.ui.dump()["path"]).read_text()
+        btn = ctx.ui.find_by_resource_id(xml, _PUB["add_topic"])
+        if btn is None:
+            linked.append(False)
+            continue
+        ctx.input.tap_node(btn)
+        time.sleep(1.0)
+        _ime.set_adbkeyboard(ctx.device)
+        time.sleep(0.4)
+        ctx.device.shell(f"am broadcast -a ADB_INPUT_TEXT --es msg {shlex.quote(t)}")
+        time.sleep(1.5)
+        xml = Path(ctx.ui.dump()["path"]).read_text()
+        rows = ctx.ui.find_all_by_resource_id(xml, _PUB["topic_name"])
+        if rows:
+            ctx.input.tap_node(rows[0])
+            time.sleep(1.0)
+            linked.append(True)
+        else:
+            linked.append(False)
+    return linked
+
+
+def _set_declare(ctx: ExecContext, declare: str) -> None:
+    if declare == "none":
+        return
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    entry = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/declareTv")
+    if entry is None:
+        return
+    ctx.input.tap_node(entry)
+    time.sleep(2.0)
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    opt = ctx.ui.find_by_text(xml, _DECLARE_TEXT[declare])
+    if opt is not None:
+        ctx.input.tap_node(opt)
+        time.sleep(0.8)
+    ctx.input.keyevent("back")
+    time.sleep(1.0)
+
+
+def _set_video_cover(ctx: ExecContext) -> None:
+    """视频自定义封面:选封面->+相册->选图(已 touch 到最前)->下一步->制作封面完成。"""
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    entry = ctx.ui.find_by_resource_id(xml, _PUB["cover_entry"])
+    if entry is None:
+        return
+    ctx.input.tap_node(entry)
+    time.sleep(2.5)
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    alb = ctx.ui.find_by_resource_id(xml, _PUB["cover_album_btn"])
+    if alb is None:
+        ctx.input.keyevent("back")
+        return
+    ctx.input.tap_node(alb)
+    time.sleep(3)
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    thumbs = ctx.ui.find_all_by_resource_id(xml, _PUB["cover_thumb"])
+    if thumbs:
+        ctx.input.tap_node(thumbs[0])
+        time.sleep(3)
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    done = ctx.ui.find_by_resource_id(xml, _PUB["cover_done"])
+    if done:
+        ctx.input.tap_node(done)
+        time.sleep(3)
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    edit_done = ctx.ui.find_by_resource_id(xml, _PUB["cover_edit_done"])
+    if edit_done:
+        ctx.input.tap_node(edit_done)
+        time.sleep(2.5)
+
+
+def _publish_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--media", nargs="+", required=True)
+    p.add_argument("--title", required=True)
+    p.add_argument("--body", required=True)
+    p.add_argument("--tags", default=None)
+    p.add_argument("--cover", default=None, help="图文: 第N张(int); 视频: 封面图路径")
+    p.add_argument(
+        "--declare",
+        default="none",
+        choices=["none", "ai", "original", "repost", "fiction", "marketing", "opinion"],
+    )
+
+
+@app.verb("publish", add_args=_publish_args, requires_commit_flag=True)
+def publish(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """发布图文/视频。默认 dry-run(走到发布键前停);--commit 真发。"""
+    # 1. lint + 判型 + cover 参数合法性
+    ctx.linter.check_or_raise(args.title)
+    ctx.linter.check_or_raise(args.body)
+    tags = _parse_tags(args.tags)
+    for t in tags:
+        ctx.linter.check_or_raise(t)
+    media_type = _classify_media(args.media)
+
+    cover_index = None
+    cover_path = None
+    if args.cover is not None:
+        if media_type == "image":
+            if not args.cover.isdigit():
+                raise EmError(ErrorCode.INVALID_ARG, "图文 --cover 需为第N张(整数)")
+            cover_index = int(args.cover)
+        else:
+            cover_path = args.cover
+            _classify_media([cover_path])  # 复用扩展名校验(单文件)
+
+    # 2. 推素材(图文按封面顺序;视频单个;cover_path 一并推)
+    media = args.media
+    if media_type == "image":
+        media = _order_media_for_cover(media, cover_index)
+    to_push = list(media) + ([cover_path] if cover_path else [])
+    pushed = ctx.media.push_to_gallery(to_push)
+
+    commit = getattr(args, "commit", False)
+    if commit:
+        ctx.governor.check_or_raise("publish")
+
+    steps: list[str] = [f"pushed {pushed['count']} media ({media_type})"]
+
+    # 3. 进相册
+    _ensure_home(ctx)
+    _dismiss_unfinished_draft(ctx)
+    ctx.input.tap_xy(*_PUB["post_entry"])
+    time.sleep(2)
+    ctx.input.tap_xy(*_PUB["album_from_gallery"])
+    time.sleep(3)
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    if _PUB["no_perm_text"] in xml:
+        raise EmError(
+            ErrorCode.PERMISSION_REQUIRED,
+            "小红书无完整相册权限,无法读取推入素材",
+            hint="adb shell pm grant com.xingin.xhs android.permission.READ_MEDIA_IMAGES "
+            "&& ...READ_MEDIA_VIDEO",
+        )
+    steps.append("opened album")
+
+    # 4. 选素材(前 len(media) 格)
+    _select_pushed_media(ctx, count=len(media))
+    steps.append(f"selected {len(media)} item(s)")
+
+    # 5. 视频专属:编辑页 -> 下一步
+    if media_type == "video":
+        xml = Path(ctx.ui.dump()["path"]).read_text()
+        nxt = ctx.ui.find_by_resource_id(xml, _PUB["video_edit_next"])
+        if nxt is None:
+            raise EmError(ErrorCode.ELEMENT_NOT_FOUND, "video edit 下一步 not found")
+        ctx.input.tap_node(nxt)
+        time.sleep(3)
+        steps.append("passed video edit")
+
+    # 6. 编辑页:取消位置弹窗
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    refuse = ctx.ui.find_by_resource_id(xml, _PUB["loc_refuse"])
+    if refuse is not None:
+        ctx.input.tap_node(refuse)
+        time.sleep(1.5)
+
+    # 7. 标题 + 正文
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    title_node = ctx.ui.find_by_resource_id(xml, _PUB["title"])
+    body_node = ctx.ui.find_by_resource_id(xml, _PUB["body"])
+    if title_node is None or body_node is None:
+        raise EmError(
+            ErrorCode.ELEMENT_NOT_FOUND,
+            "compose title/body not found",
+            hint="check 00-selectors-publish.md CapaPostNotePlatformActivity",
+        )
+    _type_cjk(ctx, title_node, args.title)
+    body_node = ctx.ui.find_by_resource_id(
+        Path(ctx.ui.dump()["path"]).read_text(), _PUB["body"]
+    )
+    _type_cjk(ctx, body_node, args.body)
+    steps.append("filled title+body")
+
+    # 8. 话题
+    tags_linked = _add_topics(ctx, tags) if tags else []
+    if tags:
+        steps.append(f"topics linked={tags_linked}")
+
+    # 9. 视频自定义封面
+    if media_type == "video" and cover_path:
+        _set_video_cover(ctx)
+        steps.append("set custom cover")
+
+    # 10. 声明
+    if args.declare != "none":
+        _set_declare(ctx, args.declare)
+        steps.append(f"declare={args.declare}")
+
+    # 11. 收键盘 + 定位发布键
+    ctx.input.keyevent("back")
+    time.sleep(1.0)
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    pub_btn = ctx.ui.find_by_resource_id(xml, _PUB["publish_btn"])
+    if pub_btn is None:
+        raise EmError(ErrorCode.ELEMENT_NOT_FOUND, "发布笔记 button not found")
+    steps.append("reached 发布笔记")
+    shot = ctx.ui.screenshot()["path"]
+
+    base = {
+        "media_type": media_type,
+        "pushed": pushed["pushed"],
+        "title": args.title,
+        "body_len": len(args.body),
+        "tags": tags,
+        "tags_linked": tags_linked,
+        "cover": (
+            f"index:{cover_index}"
+            if cover_index
+            else f"path:{cover_path}"
+            if cover_path
+            else "default"
+        ),
+        "declare": args.declare,
+        "steps": steps,
+        "screenshot": shot,
+        "publish_button_cx": pub_btn["cx"],
+        "publish_button_cy": pub_btn["cy"],
+    }
+    if not commit:
+        ctx.app.force_stop()  # 放弃草稿(不存不发)
+        return {"dry_run": True, "committed": False, **base}
+
+    ctx.input.tap_node(pub_btn)
+    time.sleep(5)
+    xml = Path(ctx.ui.dump()["path"]).read_text()
+    verified = str(ctx.app.foreground().get("activity", "")).endswith(
+        _HOME_ACTIVITY_SUFFIX
+    ) or "发布成功" in xml
+    ctx.governor.record("publish")
+    return {"dry_run": False, "committed": True, "verified_published": verified, **base}
