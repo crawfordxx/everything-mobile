@@ -16,7 +16,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+from mobilecli.apps._comments import CommentRow, select_comment
 from mobilecli.core import ime as _ime
+from mobilecli.core.ui import find_all_by_resource_id
 from mobilecli.envelope import EmError, ErrorCode
 from mobilecli.plugin import App, ExecContext
 
@@ -269,6 +271,44 @@ def back(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     ctx.input.keyevent("back")
     time.sleep(0.6)
     return {"foreground": ctx.app.foreground()}
+
+
+# ----- comments (shared parse for reply) ----------------------------------------
+
+_TOPLEVEL_X_MAX = 180  # top-level comments start x≈149; sub-replies indent to x≈215
+_TV_CONTENT_ID = "com.xingin.xhs:id/tv_content"
+_TIME_REPLY_ID = "com.xingin.xhs:id/newTimePoiIpTransTv"
+
+
+def _parse_comment_rows(xml: str) -> list[CommentRow]:
+    """Parse top-level comment rows from the scrolled note-detail comments area.
+
+    XHS stacks per comment: tv_user_name -> tv_content -> newTimePoiIpTransTv
+    ("date region 回复"). Sub-replies live in subCommentLayout, indented to
+    x≈215, and are excluded (x<180). Each top-level tv_content is paired with
+    the nearest top-level time/reply line below it (the 回复 affordance).
+    """
+    contents = [
+        n for n in find_all_by_resource_id(xml, _TV_CONTENT_ID)
+        if n["bounds"] and n["bounds"][0] < _TOPLEVEL_X_MAX
+    ]
+    replies = [
+        n for n in find_all_by_resource_id(xml, _TIME_REPLY_ID)
+        if n["bounds"] and n["bounds"][0] < _TOPLEVEL_X_MAX
+    ]
+    rows: list[CommentRow] = []
+    for content in contents:
+        below = [r for r in replies if r["bounds"][1] >= content["bounds"][3]]
+        if not below:
+            continue  # partially-scrolled last row with no reply line visible
+        reply_node = min(below, key=lambda r: r["bounds"][1])
+        rows.append(CommentRow(
+            index=len(rows) + 1,
+            text=content["text"],
+            reply_node=reply_node,
+            content_node=content,  # fallback tap target if 回复 span miss
+        ))
+    return rows
 
 
 # ----- like --------------------------------------------------------------------
