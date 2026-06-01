@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import random
+import re
 import shlex
 import time
 from typing import Any
@@ -62,8 +63,7 @@ def swipe_raw(
 def _screen_wh(device: Device) -> tuple[int, int]:
     try:
         out = device.shell("wm size")
-        import re as _re
-        m = _re.search(r"(\d+)x(\d+)", out)
+        m = re.search(r"(\d+)x(\d+)", out)
         if m:
             return int(m.group(1)), int(m.group(2))
     except Exception:  # noqa: BLE001
@@ -71,7 +71,11 @@ def _screen_wh(device: Device) -> tuple[int, int]:
     return (1080, 2410)
 
 
-def swipe_humanized(device: Device, start, end) -> dict[str, Any]:
+def swipe_humanized(
+    device: Device,
+    start: tuple[int, int],
+    end: tuple[int, int],
+) -> dict[str, Any]:
     """Humanized swipe.
 
     Default: straight `input swipe` with randomized 0.8~2.0s duration + ±4px
