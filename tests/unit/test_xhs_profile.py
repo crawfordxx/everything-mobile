@@ -1,4 +1,5 @@
 """_parse_profile: 从我页 xml 抽登录态/昵称/计数/简介/头像bounds。"""
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -16,7 +16,9 @@ import pytest
 def _cli(*args: str) -> dict:
     r = subprocess.run(
         [sys.executable, "-m", "mobilecli", *args],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     return json.loads(r.stdout)
 
@@ -34,7 +36,14 @@ def serial() -> str:
 def test_douyin_like_dry_run_locates_button(serial: str):
     """search -> open -> like dry-run returns the like-button coords."""
     _cli("--serial", serial, "douyin", "launch")
-    _cli("--serial", serial, "douyin", "search", "--keyword", os.environ.get("EM_DOUYIN_KEYWORD", "猫"))
+    _cli(
+        "--serial",
+        serial,
+        "douyin",
+        "search",
+        "--keyword",
+        os.environ.get("EM_DOUYIN_KEYWORD", "猫"),
+    )
     _cli("--serial", serial, "douyin", "open", "--rank", "1")
     payload = _cli("--serial", serial, "douyin", "like")  # no --commit
     assert payload["ok"] is True, payload
@@ -46,7 +55,14 @@ def test_douyin_like_dry_run_locates_button(serial: str):
 def test_douyin_reply_dry_run_selects_and_locates_send(serial: str):
     """Self-contained: navigate fresh, don't depend on a prior test's screen."""
     _cli("--serial", serial, "douyin", "launch")
-    _cli("--serial", serial, "douyin", "search", "--keyword", os.environ.get("EM_DOUYIN_KEYWORD", "猫"))
+    _cli(
+        "--serial",
+        serial,
+        "douyin",
+        "search",
+        "--keyword",
+        os.environ.get("EM_DOUYIN_KEYWORD", "猫"),
+    )
     _cli("--serial", serial, "douyin", "open", "--rank", "1")
     payload = _cli("--serial", serial, "douyin", "reply", "--rank", "1", "--text", "test")
     assert payload["ok"] is True, payload

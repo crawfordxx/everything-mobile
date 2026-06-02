@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from mobilecli.core import touch
 
 
@@ -37,6 +38,7 @@ def test_curved_swipe_none_without_touch_info():
 
 def test_curved_swipe_returns_none_on_shell_error():
     """sendevent 权限不足(非root)等 shell 报错 -> 返回 None(调用方回退直线)。"""
+
     class _RaisingDevice:
         def shell(self, cmd, timeout_s=30):
             raise RuntimeError("sendevent: Permission denied")

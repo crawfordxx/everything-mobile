@@ -16,7 +16,9 @@ import pytest
 def _cli(*args: str) -> dict:
     r = subprocess.run(
         [sys.executable, "-m", "mobilecli", *args],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     return json.loads(r.stdout)
 
@@ -33,7 +35,14 @@ def serial() -> str:
 @pytest.mark.integration
 def test_xhs_reply_dry_run_selects_and_locates_send(serial: str):
     _cli("--serial", serial, "xiaohongshu", "launch")
-    _cli("--serial", serial, "xiaohongshu", "search", "--keyword", os.environ.get("EM_XHS_KEYWORD", "穿搭"))
+    _cli(
+        "--serial",
+        serial,
+        "xiaohongshu",
+        "search",
+        "--keyword",
+        os.environ.get("EM_XHS_KEYWORD", "穿搭"),
+    )
     _cli("--serial", serial, "xiaohongshu", "open", "--rank", "1")
     # reply verb scrolls comments into view itself (no manual scroll needed)
     payload = _cli("--serial", serial, "xiaohongshu", "reply", "--rank", "1", "--text", "nice")

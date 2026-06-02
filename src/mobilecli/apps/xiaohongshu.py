@@ -17,6 +17,9 @@ from pathlib import Path
 from typing import Any
 
 from mobilecli.apps._comments import CommentRow, select_comment
+from mobilecli.apps._publish import classify_media as _classify_media
+from mobilecli.apps._publish import order_media_for_cover as _order_media_for_cover
+from mobilecli.apps._publish import parse_tags as _parse_tags
 from mobilecli.core import ime as _ime
 from mobilecli.core.ui import find_all_by_resource_id, find_by_resource_id
 from mobilecli.envelope import EmError, ErrorCode
@@ -342,11 +345,13 @@ def _parse_comment_rows(xml: str) -> list[CommentRow]:
     the nearest top-level time/reply line below it (the 回复 affordance).
     """
     contents = [
-        n for n in find_all_by_resource_id(xml, _TV_CONTENT_ID)
+        n
+        for n in find_all_by_resource_id(xml, _TV_CONTENT_ID)
         if n["bounds"] and n["bounds"][0] < _TOPLEVEL_X_MAX
     ]
     replies = [
-        n for n in find_all_by_resource_id(xml, _TIME_REPLY_ID)
+        n
+        for n in find_all_by_resource_id(xml, _TIME_REPLY_ID)
         if n["bounds"] and n["bounds"][0] < _TOPLEVEL_X_MAX
     ]
     rows: list[CommentRow] = []
@@ -355,12 +360,14 @@ def _parse_comment_rows(xml: str) -> list[CommentRow]:
         if not below:
             continue  # partially-scrolled last row with no reply line visible
         reply_node = min(below, key=lambda r: r["bounds"][1])
-        rows.append(CommentRow(
-            index=len(rows) + 1,
-            text=content["text"],
-            reply_node=reply_node,
-            content_node=content,  # fallback tap target if 回复 span miss
-        ))
+        rows.append(
+            CommentRow(
+                index=len(rows) + 1,
+                text=content["text"],
+                reply_node=reply_node,
+                content_node=content,  # fallback tap target if 回复 span miss
+            )
+        )
     return rows
 
 
@@ -734,9 +741,7 @@ _ME_TAB_XY = (972, 2288)  # bottom nav 我 (index_me center @1080x2410)
 def _dismiss_unfinished_draft(ctx: ExecContext) -> None:
     """若弹「继续编辑笔记吗?」草稿恢复弹窗,点关闭(不存草稿、不去编辑)。"""
     xml = Path(ctx.ui.dump()["path"]).read_text()
-    btn = ctx.ui.find_by_resource_id(
-        xml, "com.xingin.xhs:id/btn_unfinished_draft_dialog_exit"
-    )
+    btn = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/btn_unfinished_draft_dialog_exit")
     if btn is not None:
         ctx.input.tap_node(btn)
         time.sleep(0.8)
@@ -749,8 +754,9 @@ def _profile_args(p: argparse.ArgumentParser) -> None:
 @app.verb("profile", add_args=_profile_args)
 def profile(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     """读取登录态;已登录则返回头像(裁剪PNG)/昵称/小红书号/计数/简介。"""
-    ctx.app.ensure_foreground()
-    time.sleep(1.0)
+    # 必须先可靠回首页(底部导航在位)再点「我」tab;否则非首页态下硬点坐标会落空 →
+    # dump 到错屏 → 误报未登录。(ensure_foreground 不导航,是之前假阴性的根因。)
+    _ensure_home(ctx)
     _dismiss_unfinished_draft(ctx)
     ctx.input.tap_xy(*_ME_TAB_XY)  # 我 tab
     time.sleep(2.0)
@@ -772,51 +778,17 @@ def profile(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
 
 # ----- publish (arg pure-fns) ---------------------------------------------------
 
-_PUB_IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp"}
-_PUB_VIDEO_EXT = {".mp4", ".mov"}
-
-
-def _classify_media(paths: list[str]) -> str:
-    """全图片->'image';恰好1视频且无图->'video';否则 INVALID_ARG。"""
-    from pathlib import Path as _P
-
-    exts = [_P(p).suffix.lower() for p in paths]
-    imgs = [e for e in exts if e in _PUB_IMAGE_EXT]
-    vids = [e for e in exts if e in _PUB_VIDEO_EXT]
-    bad = [e for e in exts if e not in _PUB_IMAGE_EXT | _PUB_VIDEO_EXT]
-    if bad:
-        raise EmError(ErrorCode.INVALID_ARG, f"unsupported media: {bad}")
-    if imgs and not vids:
-        return "image"
-    if len(vids) == 1 and not imgs:
-        return "video"
-    raise EmError(
-        ErrorCode.INVALID_ARG,
-        "media must be all images OR exactly one video (no mix)",
-    )
-
-
-def _parse_tags(s: str | None) -> list[str]:
-    if not s:
-        return []
-    return [t.strip() for t in s.split(",") if t.strip()]
-
-
-def _order_media_for_cover(
-    media: list[str], cover_index: int | None
-) -> list[str]:
-    """图文:把封面图排到首位(选中顺序=展示顺序,首张=封面)。"""
-    if cover_index is None or cover_index < 1 or cover_index > len(media):
-        return list(media)
-    i = cover_index - 1
-    return [media[i]] + media[:i] + media[i + 1 :]
-
-
 # ===== publish (00-selectors-publish.md) =====
-_PUB = {
-    "post_entry": (540, 2288),          # id/index_post
+# 纯逻辑(classify_media / parse_tags / order_media_for_cover)已抽到
+# mobilecli.apps._publish,三家 app 共用;此处以别名导入保留内部调用名。
+# 点击坐标(tuple)单列,与 resource-id(str)分开,类型清晰。
+_PUB_XY: dict[str, tuple[int, int]] = {
+    "post_entry": (540, 2288),  # id/index_post
     "album_from_gallery": (540, 1775),  # 面板 id/rlFirst 从相册选择
-    "go_next": "com.xingin.xhs:id/bottomGoNext",        # 选完下一步
+}
+
+_PUB = {
+    "go_next": "com.xingin.xhs:id/bottomGoNext",  # 选完下一步
     "edit_next": "com.xingin.xhs:id/capa_light_edit_next",
     "title": "com.xingin.xhs:id/editTitle",
     "body": "com.xingin.xhs:id/postNoteEditContentView",
@@ -875,9 +847,7 @@ def _type_cjk(ctx: ExecContext, node: dict[str, Any], text: str) -> None:
         time.sleep(1.0)
         for _attempt in range(2):
             if needs_cjk:
-                ctx.device.shell(
-                    f"am broadcast -a ADB_INPUT_TEXT --es msg {shlex.quote(text)}"
-                )
+                ctx.device.shell(f"am broadcast -a ADB_INPUT_TEXT --es msg {shlex.quote(text)}")
             else:
                 ctx.input.type_text(text)
             time.sleep(1.2)
@@ -1017,9 +987,9 @@ def publish(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     # 3. 进相册
     _ensure_home(ctx)
     _dismiss_unfinished_draft(ctx)
-    ctx.input.tap_xy(*_PUB["post_entry"])
+    ctx.input.tap_xy(*_PUB_XY["post_entry"])
     time.sleep(2)
-    ctx.input.tap_xy(*_PUB["album_from_gallery"])
+    ctx.input.tap_xy(*_PUB_XY["album_from_gallery"])
     time.sleep(3)
     xml = Path(ctx.ui.dump()["path"]).read_text()
     if _PUB["no_perm_text"] in xml:
@@ -1064,8 +1034,10 @@ def publish(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
             hint="check 00-selectors-publish.md CapaPostNotePlatformActivity",
         )
     _type_cjk(ctx, title_node, args.title)
-    body_node = ctx.ui.find_by_resource_id(
-        Path(ctx.ui.dump()["path"]).read_text(), _PUB["body"]
+    # 输完标题后重新定位正文框(坐标可能漂移);找不到则回退到上面已校验的节点。
+    body_node = (
+        ctx.ui.find_by_resource_id(Path(ctx.ui.dump()["path"]).read_text(), _PUB["body"])
+        or body_node
     )
     _type_cjk(ctx, body_node, args.body)
     steps.append("filled title+body")
@@ -1122,8 +1094,9 @@ def publish(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     ctx.input.tap_node(pub_btn)
     time.sleep(5)
     xml = Path(ctx.ui.dump()["path"]).read_text()
-    verified = str(ctx.app.foreground().get("activity", "")).endswith(
-        _HOME_ACTIVITY_SUFFIX
-    ) or "发布成功" in xml
+    verified = (
+        str(ctx.app.foreground().get("activity", "")).endswith(_HOME_ACTIVITY_SUFFIX)
+        or "发布成功" in xml
+    )
     ctx.governor.record("publish")
     return {"dry_run": False, "committed": True, "verified_published": verified, **base}

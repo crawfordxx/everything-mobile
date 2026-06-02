@@ -1,4 +1,5 @@
 """sendevent-based continuous (curved) swipe + touch-device probing."""
+
 from __future__ import annotations
 
 import re
@@ -82,7 +83,7 @@ def curved_swipe(
     if not _sendevent_permitted(device, node):
         # 非 root 设备无法写 /dev/input;快速回退直线(不白跑整串 sleep)。
         return None
-    xmax, ymax = touch_info["x_max"], touch_info["y_max"]
+    xmax, ymax = int(touch_info["x_max"]), int(touch_info["y_max"])
     sw, sh = screen_wh
 
     def sx(x: int) -> int:
@@ -106,7 +107,7 @@ def curved_swipe(
         se(_EV_SYN, _SYN_REPORT, 0),
         f"sleep {dt:.3f}",
     ]
-    for (x, y) in points[1:]:
+    for x, y in points[1:]:
         parts += [
             se(_EV_ABS, _ABS_MT_POSITION_X, sx(x)),
             se(_EV_ABS, _ABS_MT_POSITION_Y, sy(y)),

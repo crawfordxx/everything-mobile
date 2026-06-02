@@ -112,9 +112,7 @@ def swipe_duration_s(lo: float = 0.8, hi: float = 2.0) -> float:
     return random.uniform(lo, hi)
 
 
-def micro_wobble_swipe(
-    center_y: int, screen_h: int
-) -> tuple[tuple[int, int], tuple[int, int]]:
+def micro_wobble_swipe(center_y: int, screen_h: int) -> tuple[tuple[int, int], tuple[int, int]]:
     """阅读时小幅来回:在屏中线、center_y 附近做一段短垂直滑动(看内容)。"""
     cx = 540
     amp = random.randint(int(screen_h * 0.04), int(screen_h * 0.10))

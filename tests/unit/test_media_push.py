@@ -1,4 +1,5 @@
 """push_to_gallery: 校验/远端路径/扫描/回查 (mock device)。"""
+
 from __future__ import annotations
 
 import pytest

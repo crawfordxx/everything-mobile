@@ -14,8 +14,8 @@ from mobilecli.envelope import EmError, ErrorCode
 
 @dataclass
 class CommentRow:
-    index: int                  # 1-based, among currently-visible top-level comments
-    text: str                   # matchable text (username + body + meta)
+    index: int  # 1-based, among currently-visible top-level comments
+    text: str  # matchable text (username + body + meta)
     reply_node: dict[str, Any]  # the row's 回复 affordance node (bounds/cx/cy)
     content_node: dict[str, Any] | None = None  # comment-text node (XHS reply tap fallback)
 
@@ -44,6 +44,7 @@ def select_comment(
                 hint="scroll comments into view or lower --rank",
             )
         return rows[rank - 1]
+    assert match is not None  # rank/match 互斥性已在上面校验
     for row in rows:
         if match in row.text:
             return row

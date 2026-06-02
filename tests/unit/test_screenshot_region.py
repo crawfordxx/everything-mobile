@@ -1,8 +1,8 @@
 """capture_region: 裁剪指定 bounds。"""
+
 from __future__ import annotations
 
 import io
-from pathlib import Path
 
 from PIL import Image
 

@@ -72,6 +72,18 @@ def find_by_text(xml: str, text: str) -> dict[str, Any] | None:
     return None
 
 
+def find_by_text_contains(xml: str, needle: str) -> dict[str, Any] | None:
+    """First node whose text CONTAINS `needle`.
+
+    For buttons whose label carries a dynamic suffix (e.g. douyin album
+    「下一步 (2)」 with the selected-count) where exact-match would miss.
+    """
+    for node in _iter_nodes(xml):
+        if needle in node.get("text", ""):
+            return _node_to_dict(node)
+    return None
+
+
 def find_all_by_resource_id(xml: str, resource_id: str) -> list[dict[str, Any]]:
     return [
         _node_to_dict(node) for node in _iter_nodes(xml) if node.get("resource-id") == resource_id
@@ -90,6 +102,19 @@ def find_by_content_desc_contains(xml: str, *needles: str) -> dict[str, Any] | N
         if cd and all(n in cd for n in needles):
             return _node_to_dict(node)
     return None
+
+
+def find_all_by_content_desc_contains(xml: str, *needles: str) -> list[dict[str, Any]]:
+    """All nodes whose content-desc contains ALL of `needles` (document order).
+
+    Used e.g. for douyin album select-circles (content-desc '未选中') where the
+    resource-id is obfuscated/unstable but the accessibility string is constant.
+    """
+    return [
+        _node_to_dict(node)
+        for node in _iter_nodes(xml)
+        if node.get("content-desc", "") and all(n in node.get("content-desc", "") for n in needles)
+    ]
 
 
 def find_first_by_class(xml: str, class_substr: str) -> dict[str, Any] | None:

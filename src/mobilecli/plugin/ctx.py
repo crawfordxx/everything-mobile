@@ -124,9 +124,7 @@ class UiModule:
 class MediaModule:
     device: Device
 
-    def push_to_gallery(
-        self, local_paths: list[str], subdir: str = "em-publish"
-    ) -> dict[str, Any]:
+    def push_to_gallery(self, local_paths: list[str], subdir: str = "em-publish") -> dict[str, Any]:
         return core_media.push_to_gallery(self.device, local_paths, subdir)
 
 

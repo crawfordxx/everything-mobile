@@ -58,6 +58,7 @@ def test_envelope_chinese_not_escaped():
 
 def test_new_error_codes_exist():
     from mobilecli.envelope import ErrorCode
+
     assert ErrorCode.INVALID_ARG.value == "INVALID_ARG"
     assert ErrorCode.PERMISSION_REQUIRED.value == "PERMISSION_REQUIRED"
     assert ErrorCode.MEDIA_NOT_INDEXED.value == "MEDIA_NOT_INDEXED"

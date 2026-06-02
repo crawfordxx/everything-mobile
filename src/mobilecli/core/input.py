@@ -101,7 +101,10 @@ def swipe_humanized(
     device.shell(f"input swipe {sx} {sy} {ex} {ey} {int(dur * 1000)}")
     return {
         "mode": "line",
-        "x1": sx, "y1": sy, "x2": ex, "y2": ey,
+        "x1": sx,
+        "y1": sy,
+        "x2": ex,
+        "y2": ey,
         "duration_ms": int(dur * 1000),
     }
 
