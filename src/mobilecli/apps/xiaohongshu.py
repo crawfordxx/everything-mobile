@@ -777,7 +777,11 @@ def profile(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     """读取登录态;已登录则返回头像(裁剪PNG)/昵称/小红书号/计数/简介。"""
     # 必须先可靠回首页(底部导航在位)再点「我」tab;否则非首页态下硬点坐标会落空 →
     # dump 到错屏 → 误报未登录。(ensure_foreground 不导航,是之前假阴性的根因。)
+    # 关键:_ensure_home 只保证回到 IndexActivity,但它承载所有底部 tab——若用户停在
+    # 「我」tab 的搜索浮层 / 某条笔记详情等子页面,直接点「我」可能落在错屏 → 误报未登录。
+    # 先 _select_home_feed 切到「首页」发现流拿到干净基准面,再点「我」读资料。
     _ensure_home(ctx)
+    _select_home_feed(ctx)
     _dismiss_unfinished_draft(ctx)
     ctx.input.tap_xy(*_ME_TAB_XY)  # 我 tab
     time.sleep(2.0)
