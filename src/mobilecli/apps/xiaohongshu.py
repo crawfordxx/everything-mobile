@@ -181,6 +181,26 @@ def _search_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--limit", type=int, default=10)
 
 
+def _select_home_feed(ctx: ExecContext) -> None:
+    """Select the 首页 (discovery feed) bottom-nav tab.
+
+    IndexActivityV2 hosts every bottom tab (首页/市集/消息/我), so `_on_home`
+    (activity-only) can't tell which one is selected. The global search
+    affordance (iv_search / mSearchToolBarSearchBtn) lives ONLY on the 首页
+    feed — if the app was left on e.g. the 我/profile tab (common right after a
+    `profile` call), search would fail with "affordance not found". So tap 首页
+    explicitly. No-op if the nav button isn't found (e.g. already on the feed).
+    """
+    try:
+        xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
+    except Exception:
+        return
+    home = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/index_home")
+    if home is not None:
+        ctx.input.tap_node(home)
+        time.sleep(1.5)
+
+
 @app.verb("search", add_args=_search_args)
 def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     """Search notes. Returns a result list; does NOT tap any result.
@@ -189,6 +209,7 @@ def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     """
     _ensure_home(ctx)
     time.sleep(1.0)
+    _select_home_feed(ctx)
 
     xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     search_node = None
