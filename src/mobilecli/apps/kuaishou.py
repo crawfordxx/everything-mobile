@@ -178,15 +178,33 @@ def _on_home(ctx: ExecContext) -> bool:
     return str(ctx.app.foreground().get("activity", "")).endswith(_HOME_ACTIVITY_SUFFIX)
 
 
-def _ensure_home(ctx: ExecContext) -> dict[str, Any]:
+def _ensure_home(ctx: ExecContext, max_back: int = 4) -> dict[str, Any]:
     """Force Kuaishou to the 首页 feed (where the 查找 search entry lives).
 
     返回 {"foreground", "dismissed"};dismissed 为本次关掉的弹窗/广告标签列表。
+
+    先收起遗留弹层 / 子页面再回首页:像「作品列表 → 设置作品」这种底部弹窗会盖住底部导航,
+    单靠 _dismiss_popups(只点 忽略/关闭)清不掉、也点不到「首页」→ 卡死。故按返回逐层退;
+    仍回不到首页活动则 force-stop + 重启彻底重置(对齐抖音/小红书),保证刷新前一定在首页。
     """
     ctx.app.ensure_foreground()
     time.sleep(0.5)
     _disable_animations(ctx)
     dismissed = _dismiss_popups(ctx)
+    # 逐层返回收起底部弹窗/详情页(已在首页则不按,避免误退出 app)。
+    for _ in range(max_back):
+        if _on_home(ctx):
+            break
+        ctx.input.keyevent("back")
+        time.sleep(0.7)
+        dismissed += _dismiss_popups(ctx)
+    # 仍非首页 → 强制结束并重启,回到干净的首页 feed(清掉一切残留态/弹窗)。
+    if not _on_home(ctx):
+        ctx.app.force_stop()
+        time.sleep(0.8)
+        ctx.app.launch()
+        time.sleep(3.5)
+        dismissed += _dismiss_popups(ctx)
     xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     home_tab = ctx.ui.find_by_content_desc(xml, "首页")
     if home_tab is not None:
