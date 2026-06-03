@@ -316,29 +316,16 @@ def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
             hint="resource-id 可能漂移;`mobilecli screenshot` 看搜索页",
         )
 
-    needs_cjk = not args.keyword.isascii()
-    prev_ime = _ime.current_ime(ctx.device) if needs_cjk else None
-    if needs_cjk:
-        _ime.set_adbkeyboard(ctx.device)
-        time.sleep(0.6)
-    try:
-        ctx.input.tap_node(inp)
-        time.sleep(1.0)
-        if needs_cjk:
-            ctx.device.shell(f"am broadcast -a ADB_INPUT_TEXT --es msg {shlex.quote(args.keyword)}")
-        else:
-            ctx.input.type_text(args.keyword)
-        time.sleep(1.2)
-        xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
-        submit = ctx.ui.find_by_text(xml, "搜索")
-        if submit is not None:
-            ctx.input.tap_node(submit)
-        else:
-            ctx.input.keyevent(66)  # KEYCODE_ENTER
-        time.sleep(3)
-    finally:
-        if needs_cjk and prev_ime:
-            _ime.restore_ime(ctx.device, prev_ime)
+    # 统一走 ADBKeyboard 清空+输入(中英文都生效):ascii 关键词以前走 input text 不清空,
+    # 会拼在搜索框残留词后面(搜「AI」命中上次的「护肤」)。
+    _ime.clear_and_input(ctx.device, args.keyword, lambda: ctx.input.tap_node(inp))
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
+    submit = ctx.ui.find_by_text(xml, "搜索")
+    if submit is not None:
+        ctx.input.tap_node(submit)
+    else:
+        ctx.input.keyevent(66)  # KEYCODE_ENTER
+    time.sleep(3)
 
     xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     cards = _result_cards(xml)

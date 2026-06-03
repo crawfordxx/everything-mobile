@@ -250,29 +250,11 @@ def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     # That's why a user reported searching "扫地机器人" but landing on the
     # trending "石头P20 UP好价" results. Pre-swap to ADBKeyboard, focus, then
     # CLEAR_TEXT broadcast, then INPUT_TEXT, then Enter.
-    needs_cjk = not args.keyword.isascii()
-    prev_ime = _ime.current_ime(ctx.device) if needs_cjk else None
-    if needs_cjk:
-        _ime.set_adbkeyboard(ctx.device)
-        time.sleep(0.6)
-
-    try:
-        ctx.input.tap_node(inp)
-        time.sleep(0.8)
-        # ADBKeyboard CLEAR_TEXT removes the existing text + escapes any
-        # selection state. Safe on builds where the field is already empty.
-        ctx.device.shell("am broadcast -a ADB_CLEAR_TEXT")
-        time.sleep(0.4)
-        if needs_cjk:
-            ctx.device.shell(f"am broadcast -a ADB_INPUT_TEXT --es msg {shlex.quote(args.keyword)}")
-        else:
-            ctx.input.type_text(args.keyword)
-        time.sleep(1.2)
-        ctx.input.keyevent(66)
-        time.sleep(3)
-    finally:
-        if needs_cjk and prev_ime:
-            _ime.restore_ime(ctx.device, prev_ime)
+    # 统一走 ADBKeyboard 清空+输入(中英文都生效):ascii 关键词以前走 input text 不清空,
+    # 会拼在搜索框残留词后面(搜「AI」命中上次的「护肤」)。clear_and_input 内部 focus→清空→输入。
+    _ime.clear_and_input(ctx.device, args.keyword, lambda: ctx.input.tap_node(inp))
+    ctx.input.keyevent(66)
+    time.sleep(3)
 
     xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     cards = _find_result_cards(ctx, xml)

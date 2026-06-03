@@ -182,10 +182,9 @@ def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     inp = ctx.ui.find_by_resource_id(xml, "com.ss.android.ugc.aweme:id/et_search_kw")
     if inp is None:
         raise EmError(ErrorCode.ELEMENT_NOT_FOUND, "search input not found")
-    ctx.input.tap_node(inp)
-    time.sleep(0.8)
-    ctx.input.type_text(args.keyword)
-    time.sleep(1.2)
+    # 统一走 ADBKeyboard 清空+输入(中英文都生效):此前 type_text 不清空、且打不了中文,
+    # 残留词会被一起搜(搜「AI」命中上次的「护肤」)。clear_and_input 内部 focus→清空→输入。
+    _ime.clear_and_input(ctx.device, args.keyword, lambda: ctx.input.tap_node(inp))
     ctx.input.keyevent(66)  # KEYCODE_ENTER
     time.sleep(3)
 
