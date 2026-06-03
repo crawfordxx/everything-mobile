@@ -57,7 +57,7 @@ class SessionGovernor:
         if not self.state_path.exists():
             return {"accounts": {}}
         try:
-            loaded: dict[str, Any] = json.loads(self.state_path.read_text())
+            loaded: dict[str, Any] = json.loads(self.state_path.read_text(encoding="utf-8"))
             return loaded
         except json.JSONDecodeError:
             return {"accounts": {}}

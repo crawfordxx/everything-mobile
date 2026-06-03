@@ -190,7 +190,7 @@ def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     _ensure_home(ctx)
     time.sleep(1.0)
 
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     search_node = None
     for rid in (
         "com.xingin.xhs:id/iv_search",
@@ -207,7 +207,7 @@ def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     ctx.input.tap_node(search_node)
     time.sleep(2)
 
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     inp = None
     for rid in (
         "com.xingin.xhs:id/mSearchToolBarEt",
@@ -253,7 +253,7 @@ def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
         if needs_cjk and prev_ime:
             _ime.restore_ime(ctx.device, prev_ime)
 
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     cards = _find_result_cards(ctx, xml)
     results = []
     for i, c in enumerate(cards[: args.limit], 1):
@@ -278,7 +278,7 @@ def _open_args(p: argparse.ArgumentParser) -> None:
 @app.verb("open", add_args=_open_args)
 def open_result(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     """Tap the Nth search result note from the current results screen."""
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     cards = _find_result_cards(ctx, xml)
     if args.rank < 1 or args.rank > len(cards):
         raise EmError(
@@ -306,7 +306,7 @@ def _count(node: dict[str, Any] | None) -> str:
 @app.verb("detail")
 def detail(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     """Read like / comment / collect counts from the current note detail."""
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     like = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/noteLikeLayout")
     comment = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/noteCommentLayout")
     collect = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/noteCollectLayout")
@@ -383,7 +383,7 @@ def like(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     """
     ctx.governor.check_or_raise("like")
 
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     like_btn = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/noteLikeLayout")
     if like_btn is None:
         raise EmError(
@@ -407,7 +407,7 @@ def like(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     ctx.input.tap_node(like_btn)
     time.sleep(1.5)
 
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     after = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/noteLikeLayout")
     after_already_liked = "已赞" in (after.get("content_desc", "") if after else "")
     ctx.governor.record("like")
@@ -449,7 +449,7 @@ def comment(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
         time.sleep(0.6)
 
     try:
-        xml = Path(ctx.ui.dump()["path"]).read_text()
+        xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
         compose = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/mContentET")
         if compose is None:
             # New XHS detail page: tap the bottom "说点什么..." bar (inputCommentTV)
@@ -465,7 +465,7 @@ def comment(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
             if cta is not None:
                 ctx.input.tap_node(cta)
                 time.sleep(1.5)
-                xml = Path(ctx.ui.dump()["path"]).read_text()
+                xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
                 compose = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/mContentET")
         if compose is None:
             raise EmError(
@@ -482,7 +482,7 @@ def comment(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
             ctx.input.type_text(args.text)
         time.sleep(1.5)
 
-        xml = Path(ctx.ui.dump()["path"]).read_text()
+        xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
         send_btn = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/commentFuncBtnSend")
         if send_btn is None:
             raise EmError(
@@ -504,7 +504,7 @@ def comment(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
         ctx.input.tap_node(send_btn)
         time.sleep(4)
 
-        xml = Path(ctx.ui.dump()["path"]).read_text()
+        xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
         verified = args.text in xml
         ctx.governor.record("comment")
         return {
@@ -527,12 +527,12 @@ def _scroll_to_comments(ctx: ExecContext, max_swipes: int = 5) -> list[CommentRo
     Mirrors spec §3.4 step1: the verb ensures comments are visible (already
     there -> no-op). Returns the parsed rows from the final screen state.
     """
-    rows = _parse_comment_rows(Path(ctx.ui.dump()["path"]).read_text())
+    rows = _parse_comment_rows(Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8"))
     swipes = 0
     while not rows and swipes < max_swipes:
         ctx.input.swipe((540, 1800), (540, 700))
         time.sleep(1.0)
-        rows = _parse_comment_rows(Path(ctx.ui.dump()["path"]).read_text())
+        rows = _parse_comment_rows(Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8"))
         swipes += 1
     return rows
 
@@ -578,14 +578,14 @@ def reply(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
         ctx.input.tap_xy(rn["bounds"][2] - 40, rn["cy"])
         time.sleep(1.5)
 
-        xml = Path(ctx.ui.dump()["path"]).read_text()
+        xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
         compose = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/mContentET")
         if compose is None and target.content_node is not None:
             # Fallback: right-edge tap missed the 回复 span -> tap the comment
             # text itself (also opens the reply compose on this build).
             ctx.input.tap_node(target.content_node)
             time.sleep(1.5)
-            xml = Path(ctx.ui.dump()["path"]).read_text()
+            xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
             compose = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/mContentET")
         if compose is None:
             raise EmError(
@@ -602,7 +602,7 @@ def reply(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
             ctx.input.type_text(args.text)
         time.sleep(1.5)
 
-        xml = Path(ctx.ui.dump()["path"]).read_text()
+        xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
         send_btn = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/commentFuncBtnSend")
         if send_btn is None:
             raise EmError(
@@ -625,7 +625,7 @@ def reply(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
 
         ctx.input.tap_node(send_btn)
         time.sleep(4)
-        xml = Path(ctx.ui.dump()["path"]).read_text()
+        xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
         verified = args.text in xml
         ctx.governor.record("comment")
         return {
@@ -644,7 +644,7 @@ def reply(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
 
 
 def _on_results_page(ctx: ExecContext) -> bool:
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     return bool(_find_result_cards(ctx, xml))
 
 
@@ -740,7 +740,7 @@ _ME_TAB_XY = (972, 2288)  # bottom nav 我 (index_me center @1080x2410)
 
 def _dismiss_unfinished_draft(ctx: ExecContext) -> None:
     """若弹「继续编辑笔记吗?」草稿恢复弹窗,点关闭(不存草稿、不去编辑)。"""
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     btn = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/btn_unfinished_draft_dialog_exit")
     if btn is not None:
         ctx.input.tap_node(btn)
@@ -762,7 +762,7 @@ def profile(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     time.sleep(2.0)
     _dismiss_unfinished_draft(ctx)
 
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     info = _parse_profile(xml)
     if not info.get("logged_in"):
         return {"logged_in": False}
@@ -817,7 +817,7 @@ _DECLARE_TEXT = {
 
 def _select_pushed_media(ctx: ExecContext, count: int) -> None:
     """点前 count 个网格单元的选择圈(推入素材已 touch 到相册最前)。"""
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     circles = ctx.ui.find_all_by_resource_id(xml, _PUB["select_circle"])
     if len(circles) < count:
         raise EmError(
@@ -828,7 +828,7 @@ def _select_pushed_media(ctx: ExecContext, count: int) -> None:
     for i in range(count):
         ctx.input.tap_node(circles[i])
         time.sleep(0.6)
-    go = ctx.ui.find_by_resource_id(Path(ctx.ui.dump()["path"]).read_text(), _PUB["go_next"])
+    go = ctx.ui.find_by_resource_id(Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8"), _PUB["go_next"])
     if go is None:
         raise EmError(ErrorCode.ELEMENT_NOT_FOUND, "下一步 button not found")
     ctx.input.tap_node(go)
@@ -851,7 +851,7 @@ def _type_cjk(ctx: ExecContext, node: dict[str, Any], text: str) -> None:
             else:
                 ctx.input.type_text(text)
             time.sleep(1.2)
-            xml = Path(ctx.ui.dump()["path"]).read_text()
+            xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
             if text[:6] in xml:
                 return
     finally:
@@ -862,7 +862,7 @@ def _type_cjk(ctx: ExecContext, node: dict[str, Any], text: str) -> None:
 def _add_topics(ctx: ExecContext, tags: list[str]) -> list[bool]:
     linked: list[bool] = []
     for t in tags:
-        xml = Path(ctx.ui.dump()["path"]).read_text()
+        xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
         btn = ctx.ui.find_by_resource_id(xml, _PUB["add_topic"])
         if btn is None:
             linked.append(False)
@@ -873,7 +873,7 @@ def _add_topics(ctx: ExecContext, tags: list[str]) -> list[bool]:
         time.sleep(0.4)
         ctx.device.shell(f"am broadcast -a ADB_INPUT_TEXT --es msg {shlex.quote(t)}")
         time.sleep(1.5)
-        xml = Path(ctx.ui.dump()["path"]).read_text()
+        xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
         rows = ctx.ui.find_all_by_resource_id(xml, _PUB["topic_name"])
         if rows:
             ctx.input.tap_node(rows[0])
@@ -887,13 +887,13 @@ def _add_topics(ctx: ExecContext, tags: list[str]) -> list[bool]:
 def _set_declare(ctx: ExecContext, declare: str) -> None:
     if declare == "none":
         return
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     entry = ctx.ui.find_by_resource_id(xml, "com.xingin.xhs:id/declareTv")
     if entry is None:
         return
     ctx.input.tap_node(entry)
     time.sleep(2.0)
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     opt = ctx.ui.find_by_text(xml, _DECLARE_TEXT[declare])
     if opt is not None:
         ctx.input.tap_node(opt)
@@ -904,30 +904,30 @@ def _set_declare(ctx: ExecContext, declare: str) -> None:
 
 def _set_video_cover(ctx: ExecContext) -> None:
     """视频自定义封面:选封面->+相册->选图(已 touch 到最前)->下一步->制作封面完成。"""
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     entry = ctx.ui.find_by_resource_id(xml, _PUB["cover_entry"])
     if entry is None:
         return
     ctx.input.tap_node(entry)
     time.sleep(2.5)
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     alb = ctx.ui.find_by_resource_id(xml, _PUB["cover_album_btn"])
     if alb is None:
         ctx.input.keyevent("back")
         return
     ctx.input.tap_node(alb)
     time.sleep(3)
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     thumbs = ctx.ui.find_all_by_resource_id(xml, _PUB["cover_thumb"])
     if thumbs:
         ctx.input.tap_node(thumbs[0])
         time.sleep(3)
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     done = ctx.ui.find_by_resource_id(xml, _PUB["cover_done"])
     if done:
         ctx.input.tap_node(done)
         time.sleep(3)
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     edit_done = ctx.ui.find_by_resource_id(xml, _PUB["cover_edit_done"])
     if edit_done:
         ctx.input.tap_node(edit_done)
@@ -991,7 +991,7 @@ def publish(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     time.sleep(2)
     ctx.input.tap_xy(*_PUB_XY["album_from_gallery"])
     time.sleep(3)
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     if _PUB["no_perm_text"] in xml:
         raise EmError(
             ErrorCode.PERMISSION_REQUIRED,
@@ -1007,7 +1007,7 @@ def publish(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
 
     # 5. 编辑页(图文/视频选完都进一道编辑页 ImageEditActivity3/VideoEditActivityV3)
     #    -> 下一步到发布编辑页。两者「下一步」同 id capa_light_edit_next。
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     edit_next = ctx.ui.find_by_resource_id(xml, _PUB["edit_next"])
     if edit_next is not None:
         ctx.input.tap_node(edit_next)
@@ -1017,14 +1017,14 @@ def publish(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
         raise EmError(ErrorCode.ELEMENT_NOT_FOUND, "video edit 下一步 not found")
 
     # 6. 编辑页:取消位置弹窗
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     refuse = ctx.ui.find_by_resource_id(xml, _PUB["loc_refuse"])
     if refuse is not None:
         ctx.input.tap_node(refuse)
         time.sleep(1.5)
 
     # 7. 标题 + 正文
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     title_node = ctx.ui.find_by_resource_id(xml, _PUB["title"])
     body_node = ctx.ui.find_by_resource_id(xml, _PUB["body"])
     if title_node is None or body_node is None:
@@ -1036,7 +1036,7 @@ def publish(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     _type_cjk(ctx, title_node, args.title)
     # 输完标题后重新定位正文框(坐标可能漂移);找不到则回退到上面已校验的节点。
     body_node = (
-        ctx.ui.find_by_resource_id(Path(ctx.ui.dump()["path"]).read_text(), _PUB["body"])
+        ctx.ui.find_by_resource_id(Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8"), _PUB["body"])
         or body_node
     )
     _type_cjk(ctx, body_node, args.body)
@@ -1060,7 +1060,7 @@ def publish(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     # 11. 收键盘 + 定位发布键
     ctx.input.keyevent("back")
     time.sleep(1.0)
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     pub_btn = ctx.ui.find_by_resource_id(xml, _PUB["publish_btn"])
     if pub_btn is None:
         raise EmError(ErrorCode.ELEMENT_NOT_FOUND, "发布笔记 button not found")
@@ -1093,7 +1093,7 @@ def publish(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
 
     ctx.input.tap_node(pub_btn)
     time.sleep(5)
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     verified = (
         str(ctx.app.foreground().get("activity", "")).endswith(_HOME_ACTIVITY_SUFFIX)
         or "发布成功" in xml

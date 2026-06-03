@@ -44,6 +44,8 @@ class Device:
             ["adb", "devices"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout_s,
             check=False,
         )
@@ -92,6 +94,8 @@ class Device:
                 argv,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=timeout_s,
                 check=False,
             )
@@ -129,6 +133,8 @@ class Device:
                 argv,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=timeout_s,
                 check=False,
             )
@@ -146,6 +152,8 @@ class Device:
             argv,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout_s,
             check=False,
         )
@@ -158,6 +166,8 @@ class Device:
             argv,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout_s,
             check=False,
         )

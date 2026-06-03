@@ -161,7 +161,7 @@ def _dismiss_popups(ctx: ExecContext, max_rounds: int = 4) -> list[str]:
     closed: list[str] = []
     for _ in range(max_rounds):
         try:
-            xml = Path(ctx.ui.dump()["path"]).read_text()
+            xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
         except EmError:
             break
         node = _find_popup_close(ctx, xml)
@@ -187,7 +187,7 @@ def _ensure_home(ctx: ExecContext) -> dict[str, Any]:
     time.sleep(0.5)
     _disable_animations(ctx)
     dismissed = _dismiss_popups(ctx)
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     home_tab = ctx.ui.find_by_content_desc(xml, "首页")
     if home_tab is not None:
         ctx.input.tap_node(home_tab)
@@ -276,7 +276,7 @@ def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     _ensure_home(ctx)
     time.sleep(0.8)
 
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     sb = ctx.ui.find_by_resource_id(xml, _SEARCH_BTN) or ctx.ui.find_by_content_desc(xml, "查找")
     if sb is None:
         raise EmError(
@@ -288,7 +288,7 @@ def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     time.sleep(2)
     _dismiss_popups(ctx)
 
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     # _EDITOR(id/editor)会随版本漂移,回退首个 EditText(同 comment/reply 套路)。
     inp = ctx.ui.find_by_resource_id(xml, _EDITOR) or find_first_by_class(xml, "EditText")
     if inp is None:
@@ -311,7 +311,7 @@ def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
         else:
             ctx.input.type_text(args.keyword)
         time.sleep(1.2)
-        xml = Path(ctx.ui.dump()["path"]).read_text()
+        xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
         submit = ctx.ui.find_by_text(xml, "搜索")
         if submit is not None:
             ctx.input.tap_node(submit)
@@ -322,7 +322,7 @@ def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
         if needs_cjk and prev_ime:
             _ime.restore_ime(ctx.device, prev_ime)
 
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     cards = _result_cards(xml)
     results = [
         {"index": i, "cx": c["cx"], "cy": c["cy"], "bounds": c["bounds"]}
@@ -353,7 +353,7 @@ def open_result(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
         ctx.input.tap_xy(args.cx, args.cy)
         chosen: dict[str, Any] = {"tapped": "xy", "cx": args.cx, "cy": args.cy}
     elif args.rank is not None:
-        xml = Path(ctx.ui.dump()["path"]).read_text()
+        xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
         cards = _result_cards(xml)
         if args.rank < 1 or args.rank > len(cards):
             raise EmError(
@@ -383,7 +383,7 @@ def open_result(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
 def detail(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     """Read like / comment counts from the current video detail."""
     _disable_animations(ctx)
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     ctx.input.reading_pause()
     return {
         "likes": _digits(ctx.ui.find_by_resource_id(xml, _LIKE_BTN)),
@@ -415,7 +415,7 @@ def like(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     ctx.governor.check_or_raise("like")
     _disable_animations(ctx)
 
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     like_btn = ctx.ui.find_by_resource_id(xml, _LIKE_BTN)
     if like_btn is None:
         raise EmError(
@@ -438,7 +438,7 @@ def like(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     ctx.input.tap_node(like_btn)
     time.sleep(1.5)
 
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     after = ctx.ui.find_by_resource_id(xml, _LIKE_BTN)
     after_liked = "已点赞" in (after.get("content_desc", "") if after else "")
     ctx.governor.record("like")
@@ -485,7 +485,7 @@ def _parse_comment_rows(xml: str) -> list[CommentRow]:
 
 def _open_comments(ctx: ExecContext) -> str:
     """Ensure the comments overlay is open; return the current dump XML."""
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     if _parse_comment_rows(xml):
         return xml
     entry = ctx.ui.find_by_resource_id(xml, _COMMENT_BTN)
@@ -497,7 +497,7 @@ def _open_comments(ctx: ExecContext) -> str:
         )
     ctx.input.tap_node(entry)
     time.sleep(2)
-    return Path(ctx.ui.dump()["path"]).read_text()
+    return Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
 
 
 def _compose_and_send(ctx: ExecContext, text: str, *, commit: bool) -> dict[str, Any]:
@@ -512,7 +512,7 @@ def _compose_and_send(ctx: ExecContext, text: str, *, commit: bool) -> dict[str,
         _ime.set_adbkeyboard(ctx.device)
         time.sleep(0.6)
     try:
-        xml = Path(ctx.ui.dump()["path"]).read_text()
+        xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
         inp = ctx.ui.find_by_resource_id(xml, _EDITOR) or find_first_by_class(xml, "EditText")
         if inp is None:
             raise EmError(
@@ -528,7 +528,7 @@ def _compose_and_send(ctx: ExecContext, text: str, *, commit: bool) -> dict[str,
             ctx.input.type_text(text)
         time.sleep(1.5)
 
-        xml = Path(ctx.ui.dump()["path"]).read_text()
+        xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
         send_btn = ctx.ui.find_by_resource_id(xml, _FINISH_BTN) or ctx.ui.find_by_text(xml, "发送")
         if send_btn is None:
             raise EmError(
@@ -548,7 +548,7 @@ def _compose_and_send(ctx: ExecContext, text: str, *, commit: bool) -> dict[str,
 
         ctx.input.tap_node(send_btn)
         time.sleep(4)
-        xml = Path(ctx.ui.dump()["path"]).read_text()
+        xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
         return {"dry_run": False, "committed": True, "verified_visible": text in xml}
     finally:
         if needs_cjk and prev_ime:
@@ -652,14 +652,14 @@ def profile(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     # 误点进系统设置(假阴性根因)。失败则清弹窗回首页重试。
     info: dict[str, Any] = {"logged_in": False}
     for _ in range(3):
-        xml = Path(ctx.ui.dump()["path"]).read_text()
+        xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
         me = ctx.ui.find_by_content_desc(xml, "我")
         if me is not None:
             ctx.input.tap_node(me)
         else:
             ctx.input.tap_xy(*_ME_TAB_XY)
         time.sleep(2.5)
-        info = _parse_kuaishou_profile(Path(ctx.ui.dump()["path"]).read_text())
+        info = _parse_kuaishou_profile(Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8"))
         if info.get("logged_in"):
             break
         _dismiss_popups(ctx)
@@ -731,7 +731,7 @@ def _type_cjk(ctx: ExecContext, node: dict[str, Any], text: str) -> None:
             else:
                 ctx.input.type_text(text)
             time.sleep(1.2)
-            if text[:6] in Path(ctx.ui.dump()["path"]).read_text():
+            if text[:6] in Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8"):
                 return
     finally:
         if needs_cjk and prev:
@@ -747,7 +747,7 @@ def _set_declare(ctx: ExecContext, declare: str, commit: bool) -> bool:
     if declare == "none":
         return False
     label = _DECLARE_TEXT.get(declare)
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     entry = ctx.ui.find_by_text(xml, _PUB["declare_entry_text"])
     if entry is None:
         if commit:
@@ -759,7 +759,7 @@ def _set_declare(ctx: ExecContext, declare: str, commit: bool) -> bool:
         return False
     ctx.input.tap_node(entry)
     time.sleep(1.5)
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     opt = ctx.ui.find_by_text(xml, label) if label else None
     if opt is None:
         if commit:
@@ -817,12 +817,12 @@ def publish(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
 
     # 3. 进发布入口(selector 待 recon)
     _ensure_home(ctx)
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     entry = _need(ctx.ui.find_by_content_desc(xml, _PUB["post_entry_desc"]), "发布入口")
     ctx.input.tap_node(entry)
     time.sleep(2)
 
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     if _PUB["no_perm_text"] in xml:
         raise EmError(
             ErrorCode.PERMISSION_REQUIRED,
@@ -836,7 +836,7 @@ def publish(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     steps.append("opened album")
 
     # 4. 选前 len(media) 个素材
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     cells = ctx.ui.find_all_by_resource_id(xml, _PUB["select_cell"])
     if len(cells) < len(media):
         raise EmError(
@@ -848,7 +848,7 @@ def publish(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
         ctx.input.tap_node(cells[i])
         time.sleep(0.6)
     go = _need(
-        ctx.ui.find_by_resource_id(Path(ctx.ui.dump()["path"]).read_text(), _PUB["go_next"]),
+        ctx.ui.find_by_resource_id(Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8"), _PUB["go_next"]),
         "下一步",
     )
     ctx.input.tap_node(go)
@@ -856,7 +856,7 @@ def publish(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     steps.append(f"selected {len(media)} item(s)")
 
     # 5. 编辑页 -> 下一步到发布编辑页(若有)
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     edit_next = ctx.ui.find_by_resource_id(xml, _PUB["edit_next"])
     if edit_next is not None:
         ctx.input.tap_node(edit_next)
@@ -864,11 +864,11 @@ def publish(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
         steps.append("passed edit page")
 
     # 6. 标题 + 正文
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     title_node = _need(ctx.ui.find_by_resource_id(xml, _PUB["title"]), "标题输入框")
     _type_cjk(ctx, title_node, args.title)
     body_node = _need(
-        ctx.ui.find_by_resource_id(Path(ctx.ui.dump()["path"]).read_text(), _PUB["body"]),
+        ctx.ui.find_by_resource_id(Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8"), _PUB["body"]),
         "正文输入框",
     )
     _type_cjk(ctx, body_node, args.body)
@@ -886,7 +886,7 @@ def publish(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     # 9. 收键盘 + 定位发布键
     ctx.input.keyevent("back")
     time.sleep(1.0)
-    xml = Path(ctx.ui.dump()["path"]).read_text()
+    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
     pub_btn = _need(ctx.ui.find_by_resource_id(xml, _PUB["publish_btn"]), "发布键")
     shot = ctx.ui.screenshot()["path"]
     steps.append("reached 发布")
