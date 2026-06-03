@@ -205,12 +205,17 @@ def _ensure_home(ctx: ExecContext, max_back: int = 4) -> dict[str, Any]:
         ctx.app.launch()
         time.sleep(3.5)
         dismissed += _dismiss_popups(ctx)
-    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
-    home_tab = ctx.ui.find_by_content_desc(xml, "首页")
-    if home_tab is not None:
-        ctx.input.tap_node(home_tab)
-        time.sleep(1.5)
-        dismissed += _dismiss_popups(ctx)  # 切首页后可能再弹一波(活动/广告),再清一轮
+    # best-effort 切到「首页」tab;若动画促销弹窗盖着首页(dump 取不到 idle 会抛 EmError),
+    # 不在这里硬失败——交给各 verb(如 search 的 goal-driven 循环)用 BACK 逐层清弹窗后再进。
+    try:
+        xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
+        home_tab = ctx.ui.find_by_content_desc(xml, "首页")
+        if home_tab is not None:
+            ctx.input.tap_node(home_tab)
+            time.sleep(1.5)
+            dismissed += _dismiss_popups(ctx)  # 切首页后可能再弹一波(活动/广告),再清一轮
+    except EmError:
+        pass
     return {"foreground": ctx.app.foreground(), "dismissed": dismissed}
 
 
@@ -294,16 +299,40 @@ def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     _ensure_home(ctx)
     time.sleep(0.8)
 
-    xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
-    sb = ctx.ui.find_by_resource_id(xml, _SEARCH_BTN) or ctx.ui.find_by_content_desc(xml, "查找")
-    if sb is None:
+    # 进入搜索页(goal-driven)。首页常叠插屏促销弹窗(新人福利红包 / 电商 618 视频广告):
+    #  - 关闭键是无文案的 X(_dismiss_popups 按 忽略/关闭 文案命中不了);
+    #  - 弹窗只盖在 HomeActivity 上(_on_home 只看 activity 后缀,检测不到,_ensure_home 清不掉);
+    #  - 弹窗里的礼盒/视频广告「持续动画」→ uiautomator 取不到 idle → ctx.ui.dump() 直接失败
+    #    (这正是此前 394s 卡死后报 dump failed / search input not found 的真因)。
+    # 实测:干净 feed 即便在播视频也能 dump 成功(取到「查找」),而 BACK 能逐层关掉这些动画弹窗。
+    # 故:dump 失败 ≈ 动画弹窗挡着 → BACK 退一层重试;dump 成功但点「查找」后仍停在首页 ≈ 点击被
+    # 弹窗 dim 背景吃掉 → 同样 BACK 退一层重试;进入 SearchActivity 即成功。
+    # (BACK 间隔 >2s 且干净 feed 必能 dump,故不会在干净首页连按两次 BACK 误退出 app。)
+    entered = False
+    for _ in range(7):
+        try:
+            xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
+        except EmError:
+            ctx.input.keyevent("back")
+            time.sleep(1.0)
+            _dismiss_popups(ctx)
+            continue
+        sb = ctx.ui.find_by_resource_id(xml, _SEARCH_BTN) or ctx.ui.find_by_content_desc(xml, "查找")
+        if sb is not None:
+            ctx.input.tap_node(sb)
+            time.sleep(1.8)
+        if "SearchActivity" in str(ctx.app.foreground().get("activity", "")):
+            entered = True
+            break
+        ctx.input.keyevent("back")
+        time.sleep(0.8)
+        _dismiss_popups(ctx)
+    if not entered:
         raise EmError(
             ErrorCode.ELEMENT_NOT_FOUND,
-            "kuaishou search entry (查找) not found on home feed",
-            hint="run `mobilecli dump` to inspect; UI may have changed",
+            "kuaishou search page not reached (首页插屏促销弹窗未清掉?)",
+            hint="`mobilecli --serial <s> kuaishou launch` 后 `screenshot` 看首页是否有弹窗盖住「查找」",
         )
-    ctx.input.tap_node(sb)
-    time.sleep(2)
     _dismiss_popups(ctx)
 
     xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
