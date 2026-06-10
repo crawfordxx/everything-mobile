@@ -1,23 +1,29 @@
-"""Tests for kuaishou search result-card parsing (_result_cards).
+"""Tests for kuaishou search result-card selection (_result_cards).
 
-Pure logic over UI dump XML (synthetic fixtures, no PII). The search results
-page uses clickable `id/container` grid cells; older layouts used
-`play_view_container` (kept as a fallback).
+2026-06 快手搜索结果页改版:综合 tab 按关键词 A/B 出「双列网格 / 单列 feed」两种
+布局,且混入商家/用户/广告等非视频卡。_result_cards 只选视频卡:
+- 网格布局:content-desc「××的作品」(剔除带「广告」角标的推广卡);
+- feed 布局:内含 id/play_view_container 的卡,tap 锚点取预览区中心;
+- 旧版回退:play_view_container 本身。
+fixtures 为真机 dump 的匿名化版本(结构/坐标保真,文案合成)。
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from mobilecli.apps.kuaishou import _result_cards
 
-# 新版搜索页:可点 container 网格卡。含 1 个非 clickable header + 1 个细条,应被过滤。
-_NEW = """<?xml version="1.0" encoding="UTF-8"?>
-<hierarchy>
-  <node resource-id="com.smile.gifmaker:id/container" class="android.widget.RelativeLayout" clickable="true" bounds="[10,562][535,1776]"/>
-  <node resource-id="com.smile.gifmaker:id/container" class="android.widget.RelativeLayout" clickable="true" bounds="[545,562][1070,1520]"/>
-  <node resource-id="com.smile.gifmaker:id/container" class="android.widget.RelativeLayout" clickable="true" bounds="[10,1786][535,2347]"/>
-  <node resource-id="com.smile.gifmaker:id/container" class="android.widget.RelativeLayout" clickable="false" bounds="[0,0][1080,80]"/>
-  <node resource-id="com.smile.gifmaker:id/container" class="android.widget.LinearLayout" clickable="true" bounds="[0,100][1080,140]"/>
-</hierarchy>"""
+FIX = Path(__file__).parent.parent / "fixtures"
+
+
+def _grid() -> str:
+    return (FIX / "kuaishou-search-grid.xml").read_text()
+
+
+def _feed() -> str:
+    return (FIX / "kuaishou-search-feed.xml").read_text()
+
 
 # 旧版搜索页:play_view_container(回退路径)。
 _OLD = """<?xml version="1.0" encoding="UTF-8"?>
@@ -27,13 +33,50 @@ _OLD = """<?xml version="1.0" encoding="UTF-8"?>
 </hierarchy>"""
 
 
-def test_result_cards_new_layout_filters_to_grid_cells():
-    cards = _result_cards(_NEW)
-    # 3 个达到卡片尺寸(宽>100 且 高>200)的 clickable container;
-    # 非 clickable 的 header 和高仅 40 的细条被过滤。
-    assert len(cards) == 3
-    assert cards[0]["cx"] == (10 + 535) // 2
-    assert cards[0]["cy"] == (562 + 1776) // 2
+def test_grid_layout_selects_only_work_cards():
+    cards = _result_cards(_grid())
+    # 4 张可点 container:视频卡 A/B + 广告卡(「广告」角标)+ 商家卡(无「的作品」)。
+    # 只留 2 张视频卡,文档顺序。
+    assert [c["content_desc"] for c in cards] == ["测试号A的作品", "测试号B的作品"]
+    assert cards[0]["bounds"] == [10, 562, 535, 1610]
+
+
+def test_grid_layout_excludes_ad_and_merchant_cards():
+    descs = [c["content_desc"] for c in _result_cards(_grid())]
+    assert "推广号C的作品" not in descs  # 广告卡(desc 也带「的作品」,靠角标剔除)
+    assert "" not in descs  # 商家/用户卡(无「的作品」desc)
+
+
+def test_feed_layout_anchors_tap_on_play_container():
+    cards = _result_cards(_feed())
+    assert len(cards) == 2
+    # tap 锚点 = play_view_container 中心(整卡中心可能落在作者行 → 误进用户主页)
+    assert cards[0]["cx"] == (49 + 707) // 2
+    assert cards[0]["cy"] == (798 + 1675) // 2
+    assert cards[0]["bounds"] == [49, 798, 707, 1675]
+    # 底部裁剩的视频卡 2:锚点取预览区「可见部分」中心
+    assert cards[1]["bounds"] == [49, 2253, 707, 2347]
+
+
+def test_feed_layout_skips_merchant_card():
+    # 商家卡(无 play_view_container)夹在两张视频卡之间,应被整张跳过
+    assert len(_result_cards(_feed())) == 2
+
+
+def test_feed_layout_drops_sliver_play_container():
+    # 预览区只剩 ≤50px 的碎条不可稳定点击,该卡应被丢弃(另一张正常卡保留)
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<hierarchy>
+  <node resource-id="com.smile.gifmaker:id/container" class="android.view.ViewGroup" clickable="true" bounds="[0,552][1080,1900]">
+    <node resource-id="com.smile.gifmaker:id/play_view_container" class="android.view.ViewGroup" clickable="true" bounds="[49,798][707,1675]"/>
+  </node>
+  <node resource-id="com.smile.gifmaker:id/container" class="android.view.ViewGroup" clickable="true" bounds="[0,2300][1080,2347]">
+    <node resource-id="com.smile.gifmaker:id/play_view_container" class="android.view.ViewGroup" clickable="true" bounds="[49,2307][707,2347]"/>
+  </node>
+</hierarchy>"""
+    cards = _result_cards(xml)
+    assert len(cards) == 1
+    assert cards[0]["bounds"] == [49, 798, 707, 1675]
 
 
 def test_result_cards_fallback_to_play_container():

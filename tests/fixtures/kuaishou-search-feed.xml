@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 快手搜索结果页·单列 feed 布局(2026-06 真机 dump 匿名化;综合 tab 按关键词 A/B 出此布局)。
+     视频卡 = 可点 id/container(无 content-desc)+ 内含 id/play_view_container 视频预览区;
+     商家/用户卡无预览区。底部视频卡 2 被屏幕裁剩一部分(预览区可见高 94px)。 -->
+<hierarchy rotation="0">
+  <node index="0" resource-id="" class="android.widget.FrameLayout" package="com.smile.gifmaker" text="" content-desc="" clickable="false" bounds="[0,0][1080,2410]">
+    <node index="0" resource-id="com.smile.gifmaker:id/search_result_text" class="android.widget.TextView" package="com.smile.gifmaker" text="测试关键词" content-desc="" clickable="true" bounds="[141,195][880,279]"/>
+    <node index="1" resource-id="com.smile.gifmaker:id/tabs" class="android.widget.HorizontalScrollView" package="com.smile.gifmaker" text="" content-desc="" clickable="false" bounds="[15,295][939,410]">
+      <node index="0" resource-id="" class="android.view.View" package="com.smile.gifmaker" text="" content-desc="" clickable="true" selected="true" bounds="[24,295][188,410]"/>
+      <node index="1" resource-id="" class="android.view.View" package="com.smile.gifmaker" text="" content-desc="" clickable="true" selected="false" bounds="[188,295][352,410]"/>
+      <node index="2" resource-id="" class="android.view.View" package="com.smile.gifmaker" text="" content-desc="" clickable="true" selected="false" bounds="[352,295][516,410]"/>
+    </node>
+    <node index="2" resource-id="com.smile.gifmaker:id/recycler_view" class="androidx.recyclerview.widget.RecyclerView" package="com.smile.gifmaker" text="" content-desc="" clickable="false" bounds="[0,542][1080,2347]">
+      <node index="0" resource-id="com.smile.gifmaker:id/container" class="android.view.ViewGroup" package="com.smile.gifmaker" text="" content-desc="" clickable="true" bounds="[0,552][1080,1900]">
+        <node index="0" resource-id="com.smile.gifmaker:id/user_info" class="android.view.ViewGroup" package="com.smile.gifmaker" text="" content-desc="" clickable="true" bounds="[49,583][1031,709]">
+          <node index="0" resource-id="com.smile.gifmaker:id/nick_name" class="android.widget.TextView" package="com.smile.gifmaker" text="测试美食号A" content-desc="" clickable="false" bounds="[154,598][415,650]"/>
+        </node>
+        <node index="1" resource-id="com.smile.gifmaker:id/single_video_title" class="android.widget.TextView" package="com.smile.gifmaker" text="#测试标题一" content-desc="" clickable="true" bounds="[49,709][1031,777]"/>
+        <node index="2" resource-id="com.smile.gifmaker:id/play_view_container" class="android.view.ViewGroup" package="com.smile.gifmaker" text="" content-desc="" clickable="true" bounds="[49,798][707,1675]"/>
+        <node index="3" resource-id="com.smile.gifmaker:id/single_like_hot_area" class="android.widget.LinearLayout" package="com.smile.gifmaker" text="" content-desc="" clickable="true" bounds="[341,1696][470,1775]">
+          <node index="0" resource-id="com.smile.gifmaker:id/single_like" class="android.widget.TextView" package="com.smile.gifmaker" text="6480" content-desc="" clickable="true" bounds="[383,1700][470,1775]"/>
+        </node>
+        <node index="4" resource-id="com.smile.gifmaker:id/single_comment_layout" class="android.widget.RelativeLayout" package="com.smile.gifmaker" text="" content-desc="" clickable="true" bounds="[49,1775][1031,1900]">
+          <node index="0" resource-id="com.smile.gifmaker:id/comment_text" class="android.widget.TextView" package="com.smile.gifmaker" text="测试热评一" content-desc="" clickable="true" bounds="[81,1807][854,1863]"/>
+        </node>
+      </node>
+      <node index="1" resource-id="com.smile.gifmaker:id/container" class="android.view.ViewGroup" package="com.smile.gifmaker" text="" content-desc="" clickable="true" bounds="[0,1900][1080,2120]">
+        <node index="0" resource-id="com.smile.gifmaker:id/nick_name" class="android.widget.TextView" package="com.smile.gifmaker" text="测试商家集团" content-desc="" clickable="false" bounds="[154,1950][500,2000]"/>
+        <node index="1" resource-id="" class="android.widget.TextView" package="com.smile.gifmaker" text="进入店铺" content-desc="" clickable="true" bounds="[800,1950][1031,2050]"/>
+      </node>
+      <node index="2" resource-id="com.smile.gifmaker:id/container" class="android.view.ViewGroup" package="com.smile.gifmaker" text="" content-desc="" clickable="true" bounds="[0,2120][1080,2347]">
+        <node index="0" resource-id="com.smile.gifmaker:id/single_video_title" class="android.widget.TextView" package="com.smile.gifmaker" text="测试标题二" content-desc="" clickable="true" bounds="[49,2130][1031,2230]"/>
+        <node index="1" resource-id="com.smile.gifmaker:id/play_view_container" class="android.view.ViewGroup" package="com.smile.gifmaker" text="" content-desc="" clickable="true" bounds="[49,2253][707,2347]"/>
+      </node>
+    </node>
+  </node>
+</hierarchy>

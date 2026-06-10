@@ -30,6 +30,7 @@ from mobilecli.apps._publish import (
 from mobilecli.core import ime as _ime
 from mobilecli.core.ui import (
     find_all_by_resource_id,
+    find_all_by_text,
     find_by_resource_id,
     find_first_by_class,
 )
@@ -54,10 +55,13 @@ app = App(
 )
 
 _HOME_ACTIVITY_SUFFIX = ".HomeActivity"
+# 视频详情页 activity(open 落点校验用;商家私信页/用户主页等误开页都不是它)。
+_DETAIL_ACTIVITY_SUFFIX = ".PhotoDetailActivity"
 _SEARCH_BTN = "com.smile.gifmaker:id/search_btn"
 _EDITOR = "com.smile.gifmaker:id/editor"
 _PLAY_CONTAINER = "com.smile.gifmaker:id/play_view_container"
-_SEARCH_CARD = "com.smile.gifmaker:id/container"  # 新版搜索页结果卡(可点 + 卡片尺寸过滤)
+_SEARCH_CARD = "com.smile.gifmaker:id/container"  # 搜索结果卡容器(视频/商家/广告卡共用)
+_WORK_DESC_SUFFIX = "的作品"  # 网格布局视频卡的 content-desc 后缀(商家/用户卡没有)
 _LIKE_BTN = "com.smile.gifmaker:id/like_button"
 _COMMENT_BTN = "com.smile.gifmaker:id/comment_button"
 _FINISH_BTN = "com.smile.gifmaker:id/finish_button"
@@ -85,26 +89,59 @@ def _center_in(outer: list[int] | None, inner: list[int] | None) -> bool:
 
 
 def _result_cards(xml: str) -> list[dict[str, Any]]:
-    """搜索结果卡片节点(文档顺序)。
+    """搜索结果中的「视频」卡片(文档顺序),只选视频类条目。
 
-    新版搜索页:可点的 id/container,按卡片尺寸过滤(宽>100、高>200,排除细条/全宽头部);
-    旧版回退 play_view_container(按宽度过滤掉边角碎块)。
+    2026-06 快手搜索结果页改版:综合 tab 按关键词 A/B 出两种布局,且混入商家/
+    用户/广告等非视频卡(旧逻辑按尺寸选所有可点 id/container,会误点商家卡落到
+    私信会话页,后续点赞/追评全报元素未找到)。真机 dump 见
+    tests/fixtures/kuaishou-search-grid.xml / kuaishou-search-feed.xml:
+    - 双列网格:视频卡 = 可点 id/container 且 content-desc 形如「××的作品」
+      (商家/用户卡无此后缀);广告卡 desc 也带「的作品」,靠卡内「广告」角标剔除。
+    - 单列 feed:可点 id/container 无 desc,视频卡以内含 id/play_view_container
+      (视频预览区)为锚;tap 点取预览区中心(整卡中心可能落在作者行/热评行上,
+      点作者行会进用户主页而非视频)。
+    - 旧版回退:play_view_container 本身(按宽度过滤掉边角碎块)。
     """
-    cards = [
-        c
-        for c in find_all_by_resource_id(xml, _SEARCH_CARD)
-        if c.get("clickable")
-        and c["bounds"]
-        and (c["bounds"][2] - c["bounds"][0]) > 100
-        and (c["bounds"][3] - c["bounds"][1]) > 200
+    containers = [
+        c for c in find_all_by_resource_id(xml, _SEARCH_CARD) if c.get("clickable") and c["bounds"]
     ]
-    if not cards:
-        cards = [
-            c
-            for c in find_all_by_resource_id(xml, _PLAY_CONTAINER)
-            if c["bounds"] and (c["bounds"][2] - c["bounds"][0]) > 100
-        ]
-    return cards
+    ad_marks = [n["bounds"] for n in find_all_by_text(xml, "广告") if n["bounds"]]
+
+    def _is_ad(card: dict[str, Any]) -> bool:
+        return any(_center_in(card["bounds"], b) for b in ad_marks)
+
+    # 1) 双列网格:content-desc「××的作品」的视频卡(剔除带「广告」角标的)
+    grid = [
+        c
+        for c in containers
+        if c.get("content_desc", "").endswith(_WORK_DESC_SUFFIX) and not _is_ad(c)
+    ]
+    if grid:
+        return grid
+
+    # 2) 单列 feed:内含视频预览区的卡;tap 锚点改为预览区(可见部分)中心
+    plays = [
+        p
+        for p in find_all_by_resource_id(xml, _PLAY_CONTAINER)
+        if p["bounds"] and (p["bounds"][3] - p["bounds"][1]) > 50  # 滤掉裁剩边缘的碎条
+    ]
+    feed: list[dict[str, Any]] = []
+    for c in containers:
+        if _is_ad(c):
+            continue
+        play = next((p for p in plays if _center_in(c["bounds"], p["bounds"])), None)
+        if play is None:
+            continue  # 无视频预览区 = 商家/用户/小程序等非视频卡,跳过
+        feed.append({**c, "bounds": play["bounds"], "cx": play["cx"], "cy": play["cy"]})
+    if feed:
+        return feed
+
+    # 3) 旧版回退:play_view_container(按宽度过滤掉边角碎块)
+    return [
+        c
+        for c in find_all_by_resource_id(xml, _PLAY_CONTAINER)
+        if c["bounds"] and (c["bounds"][2] - c["bounds"][0]) > 100
+    ]
 
 
 def _disable_animations(ctx: ExecContext) -> None:
@@ -406,8 +443,21 @@ def open_result(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
         )
     time.sleep(3)
     _disable_animations(ctx)
+    # 落点校验:必须是视频详情页(PhotoDetailActivity)。搜索结果混入商家/用户/
+    # 广告卡,误开会落到商家私信页/用户主页等,后续 like/comment 全报元素未找到
+    # 还可能误触私信 —— back 回结果页并显式报错,让上层跳过这一条。
+    fg = ctx.app.foreground()
+    activity = str(fg.get("activity", ""))
+    if not activity.endswith(_DETAIL_ACTIVITY_SUFFIX):
+        ctx.input.keyevent("back")
+        time.sleep(1.0)
+        raise EmError(
+            ErrorCode.ELEMENT_NOT_FOUND,
+            f"opened page is not a video detail (activity={activity})",
+            hint="该结果可能是商家/用户/广告条目;已 back 回结果页,可换下一条重试",
+        )
     ctx.input.idle_browse()
-    return {**chosen, "foreground": ctx.app.foreground()}
+    return {**chosen, "foreground": fg}
 
 
 # ----- detail ------------------------------------------------------------------

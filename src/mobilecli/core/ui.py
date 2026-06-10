@@ -90,6 +90,15 @@ def find_all_by_resource_id(xml: str, resource_id: str) -> list[dict[str, Any]]:
     ]
 
 
+def find_all_by_text(xml: str, text: str) -> list[dict[str, Any]]:
+    """All nodes whose text EXACTLY equals `text` (document order).
+
+    Used e.g. for kuaishou search-result ad badges (text="广告") to exclude
+    ad cards from result selection.
+    """
+    return [_node_to_dict(node) for node in _iter_nodes(xml) if node.get("text") == text]
+
+
 def find_by_content_desc_contains(xml: str, *needles: str) -> dict[str, Any] | None:
     """First node whose content-desc contains ALL of `needles`.
 
