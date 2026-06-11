@@ -53,15 +53,41 @@ def force_stop(device: Device, package: str) -> dict[str, Any]:
     return {"package": package, "killed": True}
 
 
+_TOP_RESUMED_RE = re.compile(r"topResumedActivity=ActivityRecord\{[^}]*?\s([^\s/}]+)/([^\s}]+)")
 _FOCUS_RE = re.compile(r"mCurrentFocus=Window\{[^}]*\s([^/\s]+)/([^\s}]+)")
 
 
-def foreground(device: Device) -> dict[str, Any]:
-    out = device.shell("dumpsys window")
+def parse_top_resumed(out: str) -> dict[str, Any] | None:
+    """`dumpsys activity activities` 里的 topResumedActivity -> {package, activity}。"""
+    m = _TOP_RESUMED_RE.search(out)
+    if not m:
+        return None
+    return {"package": m.group(1), "activity": m.group(2)}
+
+
+def parse_current_focus(out: str) -> dict[str, Any] | None:
+    """`dumpsys window` 里的 mCurrentFocus -> {package, activity};非 activity 窗口返回 None。"""
     m = _FOCUS_RE.search(out)
     if not m:
-        return {"package": "", "activity": ""}
+        return None
     return {"package": m.group(1), "activity": m.group(2)}
+
+
+def foreground(device: Device) -> dict[str, Any]:
+    """当前前台 activity。
+
+    优先 topResumedActivity(当前 resumed 的页面);mCurrentFocus 是「焦点窗口」,
+    弹窗/输入法/toast 占焦点时 ≠ 当前页面 —— 曾导致 kuaishou _on_home 在已回首页
+    时仍判 False,连按 BACK + force-stop(把 app 退出、底下的任务浮上来)。仅当
+    activity dump 不可用时才回退焦点窗口。
+    """
+    try:
+        fg = parse_top_resumed(device.shell("dumpsys activity activities"))
+        if fg is not None:
+            return fg
+    except EmError:
+        pass
+    return parse_current_focus(device.shell("dumpsys window")) or {"package": "", "activity": ""}
 
 
 def install(device: Device, apk_path: str) -> dict[str, Any]:
