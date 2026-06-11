@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from mobilecli.apps import _feed
 from mobilecli.apps._comments import CommentRow, select_comment
 from mobilecli.apps._publish import (
     classify_media,
@@ -291,6 +292,15 @@ def back(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     ctx.input.keyevent("back")
     time.sleep(0.6)
     return {"foreground": ctx.app.foreground()}
+
+
+# ----- swipe -------------------------------------------------------------------
+
+
+@app.verb("swipe", add_args=_feed.swipe_args)
+def swipe(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """模拟人为上下滑动 feed(随机起止点/时长;--times 连滑多次)。"""
+    return _feed.run_swipe(args, ctx)
 
 
 # ----- like ---------------------------------------------------------------------

@@ -60,7 +60,7 @@ def swipe_raw(
     return {"x1": x1, "y1": y1, "x2": x2, "y2": y2, "duration_ms": duration_ms}
 
 
-def _screen_wh(device: Device) -> tuple[int, int]:
+def screen_wh(device: Device) -> tuple[int, int]:
     try:
         out = device.shell("wm size")
         m = re.search(r"(\d+)x(\d+)", out)
@@ -93,7 +93,7 @@ def swipe_humanized(
 
         info = _touch.probe_touch_device(device)
         if info is not None:
-            res = _touch.curved_swipe(device, pts, dur, _screen_wh(device), info)
+            res = _touch.curved_swipe(device, pts, dur, screen_wh(device), info)
             if res is not None:
                 return {"mode": "curved", **res}
     sx, sy = _hz.jittered_xy(start[0], start[1], radius=4)

@@ -49,18 +49,38 @@ def test_grid_layout_excludes_ad_and_merchant_cards():
 
 def test_feed_layout_anchors_tap_on_play_container():
     cards = _result_cards(_feed())
-    assert len(cards) == 2
+    assert len(cards) == 1
     # tap 锚点 = play_view_container 中心(整卡中心可能落在作者行 → 误进用户主页)
     assert cards[0]["cx"] == (49 + 707) // 2
     assert cards[0]["cy"] == (798 + 1675) // 2
     assert cards[0]["bounds"] == [49, 798, 707, 1675]
-    # 底部裁剩的视频卡 2:锚点取预览区「可见部分」中心
-    assert cards[1]["bounds"] == [49, 2253, 707, 2347]
+
+
+def test_feed_layout_drops_bottom_band_card():
+    # 底部裁剩的视频卡 2(锚点 cy=2300 已进底部导航带):必须丢弃。
+    # open 用 search 返回的坐标盲点,若届时页面已退回首页,(540,2283) 附近正是
+    # 「拍摄」按钮 —— 留着这张卡就是把相机入口当成搜索结果回传。
+    for c in _result_cards(_feed()):
+        assert c["bounds"] != [49, 2253, 707, 2347]
 
 
 def test_feed_layout_skips_merchant_card():
     # 商家卡(无 play_view_container)夹在两张视频卡之间,应被整张跳过
-    assert len(_result_cards(_feed())) == 2
+    descs = [c["bounds"] for c in _result_cards(_feed())]
+    assert [c[1] for c in descs] == [798]  # 仅剩视频卡 1(商家卡/底部裁剩卡都不在)
+
+
+def test_grid_layout_drops_bottom_band_card():
+    # 网格布局同样过滤:锚点落在底部导航带的裁剩视频卡不回传
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<hierarchy>
+  <node class="android.widget.FrameLayout" bounds="[0,0][1080,2347]">
+    <node resource-id="com.smile.gifmaker:id/container" content-desc="测试号A的作品" class="android.view.ViewGroup" clickable="true" bounds="[10,562][535,1610]"/>
+    <node resource-id="com.smile.gifmaker:id/container" content-desc="测试号B的作品" class="android.view.ViewGroup" clickable="true" bounds="[10,2128][535,2347]"/>
+  </node>
+</hierarchy>"""
+    cards = _result_cards(xml)
+    assert [c["content_desc"] for c in cards] == ["测试号A的作品"]
 
 
 def test_feed_layout_drops_sliver_play_container():

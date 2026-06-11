@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from mobilecli.apps import _feed
 from mobilecli.apps._comments import CommentRow, select_comment
 from mobilecli.apps._publish import (
     classify_media,
@@ -57,6 +58,7 @@ app = App(
 _HOME_ACTIVITY_SUFFIX = ".HomeActivity"
 # 视频详情页 activity(open 落点校验用;商家私信页/用户主页等误开页都不是它)。
 _DETAIL_ACTIVITY_SUFFIX = ".PhotoDetailActivity"
+_SEARCH_ACTIVITY_SUFFIX = "SearchActivity"
 _SEARCH_BTN = "com.smile.gifmaker:id/search_btn"
 _EDITOR = "com.smile.gifmaker:id/editor"
 _PLAY_CONTAINER = "com.smile.gifmaker:id/play_view_container"
@@ -88,6 +90,25 @@ def _center_in(outer: list[int] | None, inner: list[int] | None) -> bool:
     return outer[0] <= icx <= outer[2] and outer[1] <= icy <= outer[3]
 
 
+_BOUNDS_Y2_RE = re.compile(r'bounds="\[-?\d+,-?\d+\]\[-?\d+,(-?\d+)\]"')
+_BOTTOM_BAND_RATIO = 0.93  # tap 锚点超过屏高 93% 即视为进入底部导航带
+
+
+def _drop_bottom_band(cards: list[dict[str, Any]], xml: str) -> list[dict[str, Any]]:
+    """丢弃 tap 锚点落进屏幕底部导航带的裁剩卡。
+
+    被屏幕底边裁剩一条的卡,锚点 y 已落在底部导航/「拍摄」按钮所在区域(真机
+    2347 高的可视区里 拍摄 钮中心 (539,2283)、导航带 y≥2219)。`open` 会拿
+    search 返回的坐标盲点,若届时页面已退回首页,点这个锚点 = 点「拍摄」误开
+    相机。这种卡也无法稳定点中内容,直接不回传。
+    """
+    bottom = max((int(y) for y in _BOUNDS_Y2_RE.findall(xml)), default=0)
+    if bottom <= 0:
+        return cards
+    cutoff = int(bottom * _BOTTOM_BAND_RATIO)
+    return [c for c in cards if c["cy"] < cutoff]
+
+
 def _result_cards(xml: str) -> list[dict[str, Any]]:
     """搜索结果中的「视频」卡片(文档顺序),只选视频类条目。
 
@@ -117,7 +138,7 @@ def _result_cards(xml: str) -> list[dict[str, Any]]:
         if c.get("content_desc", "").endswith(_WORK_DESC_SUFFIX) and not _is_ad(c)
     ]
     if grid:
-        return grid
+        return _drop_bottom_band(grid, xml)
 
     # 2) 单列 feed:内含视频预览区的卡;tap 锚点改为预览区(可见部分)中心
     plays = [
@@ -134,14 +155,15 @@ def _result_cards(xml: str) -> list[dict[str, Any]]:
             continue  # 无视频预览区 = 商家/用户/小程序等非视频卡,跳过
         feed.append({**c, "bounds": play["bounds"], "cx": play["cx"], "cy": play["cy"]})
     if feed:
-        return feed
+        return _drop_bottom_band(feed, xml)
 
     # 3) 旧版回退:play_view_container(按宽度过滤掉边角碎块)
-    return [
+    fallback = [
         c
         for c in find_all_by_resource_id(xml, _PLAY_CONTAINER)
         if c["bounds"] and (c["bounds"][2] - c["bounds"][0]) > 100
     ]
+    return _drop_bottom_band(fallback, xml)
 
 
 def _disable_animations(ctx: ExecContext) -> None:
@@ -322,6 +344,42 @@ def launch(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     }
 
 
+# ----- close-popup ---------------------------------------------------------------
+
+
+@app.verb("close-popup")
+def close_popup(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """通用关弹窗:逐轮点已识别的关闭控件;动画弹窗 dump 不出来则 BACK 退一层。
+
+    只点已识别的关闭控件(忽略/跳过/关闭/我知道了…),绝不乱点空白。两类弹窗:
+    - 静态弹窗:dump 后按 text/content-desc 命中关闭键,逐轮点掉;
+    - 动画促销弹窗(礼盒/视频广告持续动画 → uiautomator 取不到 idle,dump 失败):
+      与 search goal-driven 进页同款对策 —— BACK 退一层再试,最多 3 次。
+    返回 {"dismissed": 点掉的标签列表, "backs": BACK 次数, "foreground": 当前页面}。
+    """
+    _disable_animations(ctx)
+    closed: list[str] = []
+    backs = 0
+    for _ in range(8):
+        try:
+            xml = Path(ctx.ui.dump()["path"]).read_text(encoding="utf-8")
+        except EmError:
+            if backs >= 3:
+                break
+            ctx.input.keyevent("back")
+            backs += 1
+            time.sleep(1.0)
+            continue
+        node = _find_popup_close(ctx, xml)
+        if node is None:
+            break
+        label = (node.get("text") or node.get("content_desc") or "?").strip()
+        ctx.input.tap_node(node)
+        closed.append(label)
+        time.sleep(1.0)
+    return {"dismissed": closed, "backs": backs, "foreground": ctx.app.foreground()}
+
+
 # ----- search ------------------------------------------------------------------
 
 
@@ -358,7 +416,7 @@ def search(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
         if sb is not None:
             ctx.input.tap_node(sb)
             time.sleep(1.8)
-        if "SearchActivity" in str(ctx.app.foreground().get("activity", "")):
+        if _SEARCH_ACTIVITY_SUFFIX in str(ctx.app.foreground().get("activity", "")):
             entered = True
             break
         ctx.input.keyevent("back")
@@ -420,6 +478,16 @@ def open_result(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     优先 --cx/--cy:直接点击 `search` 已返回的坐标,最稳(搜索页状态多变,重新 dump
     找卡偶发抓不到)。否则 --rank:重新 dump 找第 N 张卡片(回退路径)。
     """
+    # 前置校验:必须还在搜索结果页才允许按坐标盲点。页面若已退回首页(弹窗/超时
+    # 很常见),search 返回的底部坐标 (≈540,≈2283) 正好是首页底部导航中央的「拍摄」
+    # 按钮 —— 盲点下去就是误开相机。
+    activity0 = str(ctx.app.foreground().get("activity", ""))
+    if _SEARCH_ACTIVITY_SUFFIX not in activity0:
+        raise EmError(
+            ErrorCode.APP_NOT_FOREGROUND,
+            f"not on kuaishou search results (activity={activity0})",
+            hint="先 `kuaishou search --keyword ...` 再 open;页面可能被弹窗或超时退回了首页",
+        )
     if args.cx is not None and args.cy is not None:
         ctx.input.tap_xy(args.cx, args.cy)
         chosen: dict[str, Any] = {"tapped": "xy", "cx": args.cx, "cy": args.cy}
@@ -484,6 +552,15 @@ def back(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
     ctx.input.keyevent("back")
     time.sleep(0.6)
     return {"foreground": ctx.app.foreground()}
+
+
+# ----- swipe -------------------------------------------------------------------
+
+
+@app.verb("swipe", add_args=_feed.swipe_args)
+def swipe(args: argparse.Namespace, ctx: ExecContext) -> dict[str, Any]:
+    """模拟人为上下滑动 feed(随机起止点/时长;--times 连滑多次)。"""
+    return _feed.run_swipe(args, ctx)
 
 
 # ----- like --------------------------------------------------------------------

@@ -83,6 +83,23 @@ class InputModule:
         self._pace()
         return core_input.swipe_humanized(self.device, start, end)
 
+    def swipe_feed(self, direction: str = "up") -> dict[str, Any]:
+        """Feed 上下滑一屏(模拟人为刷视频):横向位置/纵深每次随机。
+
+        up = 手指上滑(看下一条);down = 手指下滑(回看上一条)。实际手势经
+        swipe(人性化:操作间 pace + 端点抖动 + 随机时长)发出。
+        """
+        w, h = core_input.screen_wh(self.device)
+        x1 = int(w * random.uniform(0.40, 0.60))
+        x2 = x1 + random.randint(-40, 40)
+        if direction == "down":
+            y1 = int(h * random.uniform(0.28, 0.38))
+            y2 = int(h * random.uniform(0.62, 0.75))
+        else:
+            y1 = int(h * random.uniform(0.62, 0.75))
+            y2 = int(h * random.uniform(0.25, 0.38))
+        return {**self.swipe((x1, y1), (x2, y2)), "direction": direction}
+
     def type_text(self, text: str) -> dict[str, Any]:
         self._pace()
         return core_input.type_text_humanized(self.device, text)
